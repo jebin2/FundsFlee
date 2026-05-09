@@ -64,11 +64,7 @@ export default function AddPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      if (data.duplicate?.is_duplicate) {
-        router.push(`/transactions?duplicate_alert=true&ref=${data.transaction.id}`);
-      } else {
-        router.push("/dashboard");
-      }
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save. Try again.");
     } finally {

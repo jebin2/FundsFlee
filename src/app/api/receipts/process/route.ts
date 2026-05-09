@@ -4,11 +4,9 @@ import {
   getTransactionById,
   downloadReceiptFromDrive,
   updateTransactionField,
-  getTransactions,
   appendTransaction,
 } from "@/lib/sheets";
 import { parseReceiptImage } from "@/lib/ai/parse-image";
-import { checkDuplicate } from "@/lib/ai/dedup";
 import { apiError } from "@/lib/api-error";
 import type { Transaction } from "@/types";
 
@@ -56,8 +54,6 @@ export async function POST(req: NextRequest) {
     const receiptId = txId; // reuse the placeholder's txId as the receipt group id
     const now = new Date().toISOString();
 
-    const recent = await getTransactions(session.access_token, sheetId, 100);
-
     // Create one transaction per line item
     const createdIds: string[] = [];
     for (const item of receipt.items) {
@@ -86,12 +82,6 @@ export async function POST(req: NextRequest) {
         created_at: now,
         updated_at: now,
       };
-
-      const dupResult = await checkDuplicate(tx, recent.filter((t) => !createdIds.includes(t.id)));
-      if (dupResult.is_duplicate && dupResult.confidence > 0.7) {
-        tx.is_duplicate = true;
-        tx.duplicate_ref = dupResult.duplicate_of_id;
-      }
 
       await appendTransaction(session.access_token, sheetId, tx);
       createdIds.push(itemTxId);

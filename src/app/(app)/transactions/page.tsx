@@ -25,6 +25,8 @@ function TransactionsContent() {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [showDupsOnly, setShowDupsOnly] = useState(searchParams.get("duplicates_only") === "true");
+  const [dupChecking, setDupChecking] = useState(false);
+  const [activeDupGroup, setActiveDupGroup] = useState<{ original: Transaction; duplicates: Transaction[] } | null>(null);
   const [datePreset, setDatePreset] = useState<"week" | "month" | "year" | "custom" | "">("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -185,14 +187,45 @@ function TransactionsContent() {
     return new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
   }
 
+  async function triggerDupDetect() {
+    setDupChecking(true);
+    const res = await fetch("/api/duplicates/detect", { method: "POST" });
+    const data = await res.json();
+    if (data.started) {
+      // Poll until detection completes (meta date changes)
+      const poll = setInterval(async () => {
+        const txs = await loadData();
+        if (txs) { clearInterval(poll); setDupChecking(false); }
+      }, 3000);
+      setTimeout(() => { clearInterval(poll); setDupChecking(false); }, 30000);
+    } else {
+      setDupChecking(false);
+    }
+  }
+
   async function resolveDuplicate(tx: Transaction, action: "keep" | "remove") {
     await fetch(`/api/transactions/${tx.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        updates: action === "remove" ? { deleted: true } : { is_duplicate: false },
+        updates: action === "remove" ? { deleted: true } : { is_duplicate: false, duplicate_ref: undefined },
       }),
     });
+    setActiveDupGroup(null);
+    loadData();
+  }
+
+  async function dismissGroup(group: { original: Transaction; duplicates: Transaction[] }) {
+    await Promise.all(
+      group.duplicates.map((t) =>
+        fetch(`/api/transactions/${t.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates: { is_duplicate: false, duplicate_ref: undefined } }),
+        })
+      )
+    );
+    setActiveDupGroup(null);
     loadData();
   }
 
@@ -253,10 +286,13 @@ function TransactionsContent() {
 
       {/* Filter chips */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        <button onClick={() => setShowDupsOnly(!showDupsOnly)}
+        <button
+          onClick={() => { const next = !showDupsOnly; setShowDupsOnly(next); if (next) triggerDupDetect(); }}
           className="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-1.5"
           style={{ background: showDupsOnly ? "#fff3e0" : "var(--color-surface-container)", color: showDupsOnly ? "#e65100" : "var(--color-on-surface-variant)", border: showDupsOnly ? "1px solid #ffe0b2" : "none" }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>warning</span>Duplicates
+          {dupChecking
+            ? <><div className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#ffcc80", borderTopColor: "#e65100" }} />Checking…</>
+            : <><span className="material-symbols-outlined" style={{ fontSize: 14 }}>warning</span>Duplicates</>}
         </button>
         <button onClick={() => setFilterCat("")}
           className="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium"
@@ -279,7 +315,52 @@ function TransactionsContent() {
             <div key={i} className="h-16 rounded-2xl animate-pulse" style={{ background: "var(--color-surface-container)" }} />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : showDupsOnly ? (() => {
+        // Build duplicate groups: original tx → list of its duplicates
+        const dupTxs = transactions.filter((t) => t.is_duplicate && t.duplicate_ref);
+        const groupMap: Record<string, Transaction[]> = {};
+        for (const t of dupTxs) {
+          (groupMap[t.duplicate_ref!] ??= []).push(t);
+        }
+        const dupGroups = Object.entries(groupMap).map(([origId, dups]) => ({
+          original: transactions.find((t) => t.id === origId),
+          duplicates: dups,
+        })).filter((g) => g.original);
+
+        if (dupChecking) return (
+          <div className="flex flex-col items-center py-16 gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#ffcc80", borderTopColor: "#e65100" }} />
+            <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>AI is checking for duplicates…</p>
+          </div>
+        );
+        if (dupGroups.length === 0) return (
+          <div className="flex flex-col items-center py-16 gap-4 text-center">
+            <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl" style={{ background: "var(--color-surface-container)" }}>✅</div>
+            <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>No duplicates found</p>
+            <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>All your transactions look unique</p>
+          </div>
+        );
+        return (
+          <div className="flex flex-col gap-2">
+            {dupGroups.map(({ original: orig, duplicates }) => (
+              <button key={orig!.id} onClick={() => setActiveDupGroup({ original: orig!, duplicates })}
+                className="flex items-center gap-4 p-4 rounded-2xl text-left w-full"
+                style={{ background: "#fff8f0", border: "1px solid #ffe0b2" }}>
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff3e0" }}>
+                  <span className="material-symbols-outlined" style={{ color: "#e65100", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>content_copy</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-medium" style={{ color: "var(--color-on-surface)" }}>{orig!.item_name || orig!.merchant}</p>
+                  <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>{orig!.date} · {formatINR(orig!.amount)}</p>
+                </div>
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-full" style={{ background: "#ffcc80" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e65100" }}>×{duplicates.length + 1}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        );
+      })() : filtered.length === 0 ? (
         <div className="flex flex-col items-center py-16 gap-4 text-center">
           <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl" style={{ background: "var(--color-surface-container)" }}>🧾</div>
           <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>No transactions found</p>
@@ -414,6 +495,53 @@ function TransactionsContent() {
           </div>
         );
       })()}
+
+      {/* Duplicate group modal */}
+      {activeDupGroup && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
+          onClick={() => setActiveDupGroup(null)}>
+          <div className="w-full max-w-lg rounded-t-3xl overflow-hidden flex flex-col"
+            style={{ background: "var(--color-surface)", maxHeight: "80vh" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+              <div>
+                <p style={{ fontSize: 17, fontWeight: 700, color: "var(--color-on-surface)" }}>Duplicate entries</p>
+                <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>{activeDupGroup.duplicates.length + 1} entries · keep one or dismiss</p>
+              </div>
+              <button onClick={() => setActiveDupGroup(null)}
+                className="w-9 h-9 rounded-full flex items-center justify-center"
+                style={{ background: "var(--color-surface-container)", cursor: "pointer" }}>
+                <span className="material-symbols-outlined" style={{ color: "var(--color-on-surface-variant)", fontSize: 18 }}>close</span>
+              </button>
+            </div>
+            <div className="px-4 pb-4 flex flex-col gap-2 overflow-y-auto">
+              {[activeDupGroup.original, ...activeDupGroup.duplicates].map((tx, i) => (
+                <div key={tx.id} className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                  style={{ background: i === 0 ? "var(--color-primary-fixed)" : "var(--color-surface-container-lowest)", border: `1px solid ${i === 0 ? "var(--color-primary-fixed-dim)" : "var(--color-surface-variant)"}` }}>
+                  <div className="flex-1 min-w-0">
+                    {i === 0 && <p style={{ fontSize: 10, color: "var(--color-primary)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Original</p>}
+                    <p className="truncate font-medium" style={{ fontSize: 14, color: "var(--color-on-surface)" }}>{tx.item_name || tx.merchant}</p>
+                    <p style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>{tx.date} · {tx.time} · {formatINR(tx.amount)}</p>
+                  </div>
+                  <button onClick={() => resolveDuplicate(tx, "remove")}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium"
+                    style={{ background: "var(--color-error-container)", color: "var(--color-error)", cursor: "pointer" }}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="px-4 pb-6">
+              <button onClick={() => dismissGroup(activeDupGroup)}
+                className="w-full py-3 rounded-2xl font-semibold"
+                style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 15, cursor: "pointer" }}>
+                Keep all (not duplicates)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { appendTransaction, getTransactions } from "@/lib/sheets";
-import { checkDuplicate } from "@/lib/ai/dedup";
 import { apiError } from "@/lib/api-error";
 import type { Transaction } from "@/types";
 
@@ -36,18 +35,7 @@ export async function POST(req: NextRequest) {
     };
 
     await appendTransaction(session.access_token, session.sheet_id, tx);
-
-    // AI dedup is best-effort — a failure must not block the save
-    let duplicate = null;
-    try {
-      const recent = await getTransactions(session.access_token, session.sheet_id, 100);
-      const dedupResult = await checkDuplicate(tx, recent);
-      duplicate = dedupResult.is_duplicate && dedupResult.confidence > 0.85 ? dedupResult : null;
-    } catch {
-      // AI unavailable — skip dedup silently
-    }
-
-    return NextResponse.json({ transaction: tx, duplicate });
+    return NextResponse.json({ transaction: tx });
   } catch (err) {
     return apiError("POST transaction error", err);
   }

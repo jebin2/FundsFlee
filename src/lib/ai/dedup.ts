@@ -1,55 +1,58 @@
 import { generateText } from "./client";
-import type { Transaction, DuplicateResult } from "@/types";
+import type { Transaction } from "@/types";
 
-export async function checkDuplicate(
-  newTransaction: Transaction,
-  recentTransactions: Transaction[]
-): Promise<DuplicateResult> {
-  if (recentTransactions.length === 0) {
-    return { is_duplicate: false, confidence: 0 };
+export interface DuplicateGroup {
+  original_id: string;
+  duplicate_ids: string[];
+  reason: string;
+}
+
+export async function findDuplicates(transactions: Transaction[]): Promise<DuplicateGroup[]> {
+  // Group by date — only dates with 2+ transactions can have duplicates
+  const byDate: Record<string, Transaction[]> = {};
+  for (const tx of transactions) {
+    (byDate[tx.date] ??= []).push(tx);
   }
 
-  const candidates = recentTransactions
-    .filter((t) => t.id !== newTransaction.id)
-    .filter((t) => {
-      const daysDiff = Math.abs(
-        new Date(newTransaction.date).getTime() - new Date(t.date).getTime()
-      ) / (1000 * 60 * 60 * 24);
-      return daysDiff <= 1;
-    })
-    .slice(0, 20);
+  const results: DuplicateGroup[] = [];
 
-  if (candidates.length === 0) {
-    return { is_duplicate: false, confidence: 0 };
-  }
+  for (const [date, txs] of Object.entries(byDate)) {
+    if (txs.length < 2) continue;
 
-  const raw = await generateText(
-    `Check if this new transaction is a duplicate of any of the recent ones.
+    const raw = await generateText(
+      `Find duplicate transactions within this single day: ${date}
 
-New transaction:
-${JSON.stringify({ merchant: newTransaction.merchant, item_name: newTransaction.item_name, amount: newTransaction.amount, date: newTransaction.date, time: newTransaction.time })}
+Transactions:
+${JSON.stringify(txs.map((t) => ({ id: t.id, item_name: t.item_name ?? "", merchant: t.merchant, amount: t.amount, time: t.time })))}
 
-Recent transactions (last 24h):
-${JSON.stringify(candidates.map((t) => ({ id: t.id, merchant: t.merchant, item_name: t.item_name, amount: t.amount, date: t.date, time: t.time })))}
-
-Duplicate criteria:
-- HIGH confidence (>0.85): Same item_name + same amount + within 2 hours (merchant "Unknown" is ignored)
-- MEDIUM confidence (0.6-0.85): Same item_name + same merchant (not "Unknown") + amount within 5% + same day
-- LOW/NO duplicate: merchant is "Unknown" on both sides without matching item_name — do NOT flag as duplicate
-- Different item names = NOT a duplicate even if amount and merchant match
+A duplicate means: same item_name (or very similar) AND same amount on the same day.
+Rules:
+- "Unknown" merchant alone is NOT enough — require matching item_name
+- Different item names = NOT a duplicate even if amount matches
+- Pick the EARLIEST time entry as original_id; rest go in duplicate_ids
+- Return empty array [] if no duplicates found
 
 Respond with JSON only:
-{
-  "is_duplicate": boolean,
-  "confidence": number 0-1,
-  "duplicate_of_id": string or null,
-  "reason": string
-}`,
-    "",
-    512
-  );
+[
+  {
+    "original_id": "id of earliest entry to keep",
+    "duplicate_ids": ["id2", "id3"],
+    "reason": "brief reason"
+  }
+]`,
+      "",
+      512
+    );
 
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return { is_duplicate: false, confidence: 0 };
-  return JSON.parse(jsonMatch[0]) as DuplicateResult;
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) continue;
+    try {
+      const groups: DuplicateGroup[] = JSON.parse(match[0]);
+      results.push(...groups.filter((g) => g.duplicate_ids?.length > 0));
+    } catch {
+      // skip unparseable response
+    }
+  }
+
+  return results;
 }

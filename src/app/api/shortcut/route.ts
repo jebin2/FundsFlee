@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { appendTransaction, getTransactions, setMetaValue } from "@/lib/sheets";
+import { appendTransaction, setMetaValue } from "@/lib/sheets";
 import { parseTransactionText } from "@/lib/ai/parse-text";
-import { checkDuplicate } from "@/lib/ai/dedup";
 import type { Transaction } from "@/types";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me");
@@ -52,11 +51,7 @@ export async function POST(req: NextRequest) {
   };
 
   await appendTransaction(accessToken, payload.sheetId, tx);
-
-  const recent = await getTransactions(accessToken, payload.sheetId, 50);
-  const dedupResult = await checkDuplicate(tx, recent);
-
   await setMetaValue(accessToken, payload.sheetId, "shortcut_last_used", new Date().toISOString());
 
-  return NextResponse.json({ entry: tx, is_duplicate: dedupResult.is_duplicate });
+  return NextResponse.json({ entry: tx });
 }
