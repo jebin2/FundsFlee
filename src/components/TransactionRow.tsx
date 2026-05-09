@@ -37,9 +37,10 @@ interface TransactionRowProps {
   subtitleMode?: "merchant-payment" | "category-date";
   hasSuggestions?: boolean;
   onSuggestionsClick?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
 }
 
-export function TransactionRow({ tx, subtitleMode = "merchant-payment", hasSuggestions, onSuggestionsClick }: TransactionRowProps) {
+export function TransactionRow({ tx, subtitleMode = "merchant-payment", hasSuggestions, onSuggestionsClick, onClick }: TransactionRowProps) {
   const isInFlight = tx.status === "queued" || tx.status === "processing";
   const isFailed = tx.status === "failed";
 
@@ -53,29 +54,27 @@ export function TransactionRow({ tx, subtitleMode = "merchant-payment", hasSugge
     ? `${tx.category}${tx.date ? ` · ${tx.date}` : ""}`
     : [tx.merchant !== "Unknown" ? tx.merchant : null, tx.payment_method].filter(Boolean).join(" · ");
 
-  return (
-    <Link
-      href={`/transactions/${tx.id}`}
-      className="flex items-center gap-4 p-4 rounded-2xl"
-      style={{
-        background: isInFlight
-          ? "var(--color-primary-fixed)"
-          : isFailed
-          ? "var(--color-error-container)"
-          : tx.is_duplicate
-          ? "#fff8f0"
-          : "var(--color-surface-container-lowest)",
-        border: `1px solid ${
-          isInFlight
-            ? "var(--color-primary-fixed-dim)"
-            : isFailed
-            ? "var(--color-on-error-container)"
-            : tx.is_duplicate
-            ? "#ffe0b2"
-            : "var(--color-surface-variant)"
-        }`,
-      }}
-    >
+  const containerStyle = {
+    background: isInFlight
+      ? "var(--color-primary-fixed)"
+      : isFailed
+      ? "var(--color-error-container)"
+      : tx.is_duplicate
+      ? "#fff8f0"
+      : "var(--color-surface-container-lowest)",
+    border: `1px solid ${
+      isInFlight
+        ? "var(--color-primary-fixed-dim)"
+        : isFailed
+        ? "var(--color-on-error-container)"
+        : tx.is_duplicate
+        ? "#ffe0b2"
+        : "var(--color-surface-variant)"
+    }`,
+  };
+
+  const inner = (
+    <>
       {/* Icon */}
       <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
         style={{ background: isInFlight ? "rgba(31,16,142,0.1)" : isFailed ? "var(--color-error-container)" : "var(--color-primary-fixed)" }}>
@@ -125,6 +124,20 @@ export function TransactionRow({ tx, subtitleMode = "merchant-payment", hasSugge
           </button>
         )}
       </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button onClick={onClick} className="flex items-center gap-4 p-4 rounded-2xl w-full text-left" style={containerStyle}>
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link href={`/transactions/${tx.id}`} className="flex items-center gap-4 p-4 rounded-2xl" style={containerStyle}>
+      {inner}
     </Link>
   );
 }

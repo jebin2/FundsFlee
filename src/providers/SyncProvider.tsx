@@ -13,7 +13,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { setTransactions, setOnline, setPendingCount, setSyncing } = useAppStore();
 
   async function sync() {
-    // Use global Zustand flag — shared with useTransactions hook instances
     if (useAppStore.getState().syncing) return;
     setSyncing(true);
     try {
@@ -21,10 +20,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setTransactions(txs);
     } catch (err) {
       if (err instanceof Error && err.message === "auth_expired") {
-        // Layout's fetch interceptor will handle sign-out on next API call
         return;
       }
-      // Network unavailable — stay on local data
     } finally {
       setSyncing(false);
     }

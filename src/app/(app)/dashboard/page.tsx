@@ -7,6 +7,8 @@ import Link from "next/link";
 import { TransactionRow, formatINR } from "@/components/TransactionRow";
 import { useTransactions } from "@/hooks/useTransactions";
 import { getPeriodRange, type Period } from "@/lib/date/periods";
+import { TransactionSheet } from "@/components/transactions/TransactionSheet";
+import type { Transaction } from "@/types";
 
 export default function DashboardPage() {
   const { data: session } = useSession();
@@ -14,6 +16,7 @@ export default function DashboardPage() {
   const { transactions, refresh } = useTransactions();
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("month");
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
@@ -141,7 +144,7 @@ export default function DashboardPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {recent.map((tx) => (
-              <TransactionRow key={tx.id} tx={tx} subtitleMode="category-date" />
+              <TransactionRow key={tx.id} tx={tx} subtitleMode="category-date" onClick={() => setSelectedTx(tx)} />
             ))}
           </div>
         )}
@@ -161,6 +164,10 @@ export default function DashboardPage() {
           </div>
           <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-primary)", fontSize: 20 }}>chevron_right</span>
         </Link>
+      )}
+
+      {selectedTx && (
+        <TransactionSheet tx={selectedTx} onClose={() => setSelectedTx(null)} />
       )}
     </div>
   );

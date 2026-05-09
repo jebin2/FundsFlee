@@ -16,6 +16,7 @@ import {
   type DatePreset,
   type DuplicateGroup,
 } from "@/features/transactions/utils/list";
+import { TransactionSheet } from "@/components/transactions/TransactionSheet";
 
 function TransactionsContent() {
   const searchParams = useSearchParams();
@@ -23,6 +24,7 @@ function TransactionsContent() {
   // Map: tx_id → list of pending suggestions for that tx
   const [suggestions, setSuggestions] = useState<Record<string, PendingSuggestion[]>>({});
   const [activeSuggTxId, setActiveSuggTxId] = useState<string | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
@@ -376,6 +378,7 @@ function TransactionsContent() {
                         tx={tx}
                         hasSuggestions={!isInFlight && txSuggestions.length > 0}
                         onSuggestionsClick={() => setActiveSuggTxId(tx.id)}
+                        onClick={() => setSelectedTx(tx)}
                       />
 
                       {tx.is_duplicate && tx.status === "done" && (
@@ -392,11 +395,12 @@ function TransactionsContent() {
                       {/* Failed entry — retry or fill manually */}
                       {isFailed && (
                         <div className="ml-4 mt-1 flex gap-2 px-3">
-                          <Link href={`/transactions/${tx.id}?edit=true`}
+                          <button
+                            onClick={() => setSelectedTx(tx)}
                             className="px-4 py-1.5 rounded-xl text-sm font-medium"
                             style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)" }}>
                             Fill manually
-                          </Link>
+                          </button>
                           <button
                             onClick={async () => {
                               await fetch("/api/receipts/process", {
@@ -478,6 +482,11 @@ function TransactionsContent() {
           </div>
         );
       })()}
+
+      {/* Transaction detail sheet */}
+      {selectedTx && (
+        <TransactionSheet tx={selectedTx} onClose={() => setSelectedTx(null)} />
+      )}
 
       {/* Duplicate group modal */}
       {activeDupGroup && (
