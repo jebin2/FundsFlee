@@ -15,10 +15,8 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   runtimeCaching: [
-    // Cache the session endpoint so useSession() works offline.
-    // Must use a Strategy instance (not a string) — Serwist's constructor
-    // only accepts objects with a .handle() method here.
-    // No networkTimeoutSeconds: wait as long as needed (handles cold starts).
+    // Session — NetworkFirst with no timeout so cold starts never cause
+    // a stale-cache fallback. Falls back to cache only when truly offline.
     {
       matcher: /^https?:\/\/[^/]+\/api\/auth\/session/,
       handler: new NetworkFirst({
@@ -29,13 +27,26 @@ const serwist = new Serwist({
         ],
       }),
     },
+    // HTML pages — defaultCache's "pages" matcher checks Content-Type on
+    // the REQUEST which is always empty for navigations. Use mode:navigate
+    // instead so HTML is actually cached when the user visits pages online.
+    {
+      matcher: ({ request }: { request: Request }) => request.mode === "navigate",
+      handler: new NetworkFirst({
+        cacheName: "pages",
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 64, maxAgeSeconds: 86400 }),
+          new CacheableResponsePlugin({ statuses: [200] }),
+        ],
+      }),
+    },
     ...defaultCache,
   ],
   fallbacks: {
     entries: [
       {
         url: "/~offline",
-        matcher({ request }) {
+        matcher({ request }: { request: Request }) {
           return request.destination === "document";
         },
       },
