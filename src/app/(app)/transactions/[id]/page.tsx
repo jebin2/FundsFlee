@@ -39,6 +39,7 @@ function DetailContent({ id }: { id: string }) {
   const [retrying, setRetrying] = useState(false);
   const [showReceiptItems, setShowReceiptItems] = useState(false);
   const [isEditing, setIsEditing] = useState(editMode);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -83,23 +84,23 @@ function DetailContent({ id }: { id: string }) {
     if (!confirm("Delete this transaction?")) return;
     setDeleting(true);
     try {
-      // Optimistically remove from store and IndexedDB
-      removeTransaction(id);
-      await removeLocalTransaction(id);
-
       if (isOnline) {
+        // Online: confirm with server FIRST, then remove locally
         const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Delete failed on server");
+        if (!res.ok) throw new Error("Delete failed — please try again.");
+        removeTransaction(id);
+        await removeLocalTransaction(id);
       } else {
+        // Offline: remove locally and queue — sync will confirm later
+        removeTransaction(id);
+        await removeLocalTransaction(id);
         await enqueueOp("DELETE", `/api/transactions/${id}`, null);
         useAppStore.getState().setPendingCount(await pendingCount());
       }
       router.back();
     } catch (err) {
       console.error("Delete error:", err);
-      // Local removal already happened — don't restore it.
-      // The queue will retry or the next sync will reconcile.
-      router.back();
+      setError(err instanceof Error ? err.message : "Delete failed.");
     } finally {
       setDeleting(false);
     }
@@ -272,6 +273,9 @@ function DetailContent({ id }: { id: string }) {
             </a>
           )}
 
+          {error && (
+            <p className="text-center py-2" style={{ fontSize: 13, color: "var(--color-error)" }}>{error}</p>
+          )}
           {/* Delete */}
           <button onClick={deleteTransaction} disabled={deleting}
             className="w-full py-4 rounded-2xl font-semibold flex items-center justify-center gap-2 mt-4"

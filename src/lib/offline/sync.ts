@@ -18,14 +18,18 @@ export async function pullTransactions(): Promise<Transaction[]> {
 
   if (transactions.length > 0) {
     await offlineDb.transactions.bulkPut(transactions);
+    // Remove rows that no longer exist on the server
+    // Always stringify both sides to avoid type coercion mismatches
+    const serverIds = new Set(transactions.map((t) => String(t.id)));
+    const rawLocalIds = await offlineDb.transactions.toCollection().primaryKeys();
+    const localIds = (rawLocalIds as (string | number)[]).map(String);
+    const staleIds = localIds.filter((id) => !serverIds.has(id));
+    if (staleIds.length > 0) {
+      await offlineDb.transactions.bulkDelete(staleIds);
+    }
   }
-  // Remove rows that no longer exist on the server
-  const serverIds = new Set(transactions.map((t) => t.id));
-  const localIds = await offlineDb.transactions.toCollection().primaryKeys() as string[];
-  const staleIds = localIds.filter((id) => !serverIds.has(id));
-  if (staleIds.length > 0) {
-    await offlineDb.transactions.bulkDelete(staleIds);
-  }
+  // If server returns 0 transactions, do NOT touch local cache —
+  // offline-created items may not have flushed yet.
   return transactions;
 }
 

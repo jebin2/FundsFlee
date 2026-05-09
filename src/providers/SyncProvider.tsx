@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useAppStore } from "@/store";
 import {
   getLocalTransactions,
@@ -10,12 +10,12 @@ import {
 } from "@/lib/offline";
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const { setTransactions, setOnline, setPendingCount } = useAppStore();
-  const syncing = useRef(false);
+  const { setTransactions, setOnline, setPendingCount, setSyncing } = useAppStore();
 
   async function sync() {
-    if (syncing.current) return;
-    syncing.current = true;
+    // Use global Zustand flag — shared with useTransactions hook instances
+    if (useAppStore.getState().syncing) return;
+    setSyncing(true);
     try {
       const txs = await pullTransactions();
       setTransactions(txs);
@@ -26,13 +26,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }
       // Network unavailable — stay on local data
     } finally {
-      syncing.current = false;
+      setSyncing(false);
     }
   }
 
   useEffect(() => {
     // Sequential init: local first (instant) → then API (fresh)
-    // Running them concurrently risks local data overwriting fresher API data.
     (async () => {
       const localTxs = await getLocalTransactions();
       if (localTxs.length > 0) setTransactions(localTxs);
@@ -50,7 +49,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const handleOnline = async () => {
       setOnline(true);
       const result = await flushQueue();
-      if (result.authExpired) return; // layout interceptor handles sign-out
+      if (result.authExpired) return;
       const count = await pendingCount();
       setPendingCount(count);
       await sync();

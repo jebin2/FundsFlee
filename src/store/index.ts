@@ -7,6 +7,7 @@ interface AppState {
   profile: UserProfile | null;
   isOnline: boolean;
   pendingCount: number;
+  syncing: boolean;
 
   setTransactions: (txs: Transaction[]) => void;
   addTransaction: (tx: Transaction) => void;
@@ -16,6 +17,7 @@ interface AppState {
   setProfile: (profile: UserProfile) => void;
   setOnline: (online: boolean) => void;
   setPendingCount: (count: number) => void;
+  setSyncing: (syncing: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -24,6 +26,7 @@ export const useAppStore = create<AppState>((set) => ({
   profile: null,
   isOnline: true,
   pendingCount: 0,
+  syncing: false,
 
   setTransactions: (transactions) => set({ transactions }),
 
@@ -48,4 +51,5 @@ export const useAppStore = create<AppState>((set) => ({
   setProfile: (profile) => set({ profile }),
   setOnline: (isOnline) => set({ isOnline }),
   setPendingCount: (pendingCount) => set({ pendingCount }),
+  setSyncing: (syncing) => set({ syncing }),
 }));

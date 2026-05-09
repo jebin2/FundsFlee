@@ -1,17 +1,23 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { useAppStore } from "@/store";
 import { pullTransactions } from "@/lib/offline";
 
 export function useTransactions() {
   const transactions = useAppStore((s) => s.transactions);
   const setTransactions = useAppStore((s) => s.setTransactions);
-  const refreshing = useRef(false);
+
+  // Global flag in Zustand — shared across ALL hook instances and components.
+  // Prevents concurrent pullTransactions() races from dashboard + transactions page.
+  const syncing = useAppStore((s) => s.syncing);
+  const setSyncing = useAppStore((s) => s.setSyncing);
 
   const refresh = useCallback(async () => {
-    if (refreshing.current) return useAppStore.getState().transactions;
-    refreshing.current = true;
+    if (useAppStore.getState().syncing) {
+      return useAppStore.getState().transactions;
+    }
+    setSyncing(true);
     try {
       const txs = await pullTransactions();
       setTransactions(txs);
@@ -19,9 +25,9 @@ export function useTransactions() {
     } catch {
       return useAppStore.getState().transactions;
     } finally {
-      refreshing.current = false;
+      setSyncing(false);
     }
-  }, [setTransactions]);
+  }, [setTransactions, setSyncing]);
 
-  return { transactions, refresh };
+  return { transactions, refresh, syncing };
 }
