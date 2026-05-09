@@ -17,26 +17,15 @@ export default withPWA({
   reloadOnOnline: true,
   disable: process.env.NODE_ENV === "development",
   fallbacks: {
-    document: "/offline",
+    // Standalone HTML — NOT a Next.js page, so the client-side router
+    // never tries to re-navigate to the original URL after hydration.
+    document: "/offline.html",
   },
   workboxOptions: {
     skipWaiting: true,
     clientsClaim: true,
-    navigateFallback: "/offline",
-    navigateFallbackDenylist: [/^\/api\//],
-    runtimeCaching: [
-      {
-        // Cache all app page HTML with NetworkFirst (3s timeout → cache)
-        // Excludes: API routes, _next static files, icons, manifest
-        urlPattern: /^https?:\/\/[^/]+(\/(?!api\/|_next\/|icon|manifest)[^?]*)?(\?.*)?$/,
-        handler: "NetworkFirst",
-        options: {
-          cacheName: "app-pages",
-          networkTimeoutSeconds: 3,
-          expiration: { maxEntries: 64, maxAgeSeconds: 86400 },
-          cacheableResponse: { statuses: [200] },
-        },
-      },
-    ],
+    navigateFallback: "/offline.html",
+    // Exclude API and internal Next.js paths from fallback
+    navigateFallbackDenylist: [/^\/api\//, /^\/_next\//],
   },
 })(nextConfig);
