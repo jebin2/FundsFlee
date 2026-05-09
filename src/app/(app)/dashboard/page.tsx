@@ -41,8 +41,7 @@ export default function DashboardPage() {
       return;
     }
     refresh().finally(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, router]);
+  }, [session, router, refresh]);
 
   const { from, to } = getDateRange(period);
   const filtered = transactions.filter(

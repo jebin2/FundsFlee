@@ -26,16 +26,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function handleOnline() {
-    setOnline(true);
-    await flushQueue();
-    const count = await pendingCount();
-    setPendingCount(count);
-    await sync();
-  }
-
   useEffect(() => {
-    // 1. Load local data immediately (instant render)
+    // 1. Load local data immediately (instant render while API fetches)
     getLocalTransactions().then((txs) => {
       if (txs.length > 0) setTransactions(txs);
     });
@@ -43,16 +35,27 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     // 2. Pull fresh data from API
     sync();
 
-    // 3. Track online/offline
-    const online = navigator.onLine;
-    setOnline(online);
+    // 3. Set initial online state
+    setOnline(navigator.onLine);
+
+    // Define handlers inside effect so cleanup references the same instances
+    const handleOffline = () => setOnline(false);
+
+    const handleOnline = async () => {
+      setOnline(true);
+      const result = await flushQueue();
+      if (result.authExpired) return; // layout interceptor handles sign-out
+      const count = await pendingCount();
+      setPendingCount(count);
+      await sync();
+    };
 
     window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", () => setOnline(false));
+    window.addEventListener("offline", handleOffline);
 
     return () => {
       window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", () => setOnline(false));
+      window.removeEventListener("offline", handleOffline);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

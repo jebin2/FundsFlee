@@ -10,6 +10,9 @@ import { SyncProvider } from "@/providers/SyncProvider";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useAppStore } from "@/store";
 
+// Module-level guard — prevents double-wrapping fetch in React StrictMode dev
+let fetchIntercepted = false;
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -21,9 +24,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     signOut({ callbackUrl: "/" });
   }
 
-  // Intercept 401 responses from our own API — fires signOut immediately
-  // regardless of whether the JWT refresh cycle has caught up yet.
   useEffect(() => {
+    if (fetchIntercepted) return;
+    fetchIntercepted = true;
+
     const original = window.fetch;
     window.fetch = async (...args) => {
       const res = await original(...args);
@@ -33,20 +37,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       }
       return res;
     };
-    return () => { window.fetch = original; };
+
+    return () => {
+      // Only restore if we were the ones who wrapped
+      window.fetch = original;
+      fetchIntercepted = false;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.replace("/");
-    }
+    if (status === "unauthenticated") router.replace("/");
   }, [status, router]);
 
   useEffect(() => {
-    if (session?.error === "RefreshTokenError") {
-      triggerSignOut();
-    }
+    if (session?.error === "RefreshTokenError") triggerSignOut();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.error]);
 
@@ -54,10 +59,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ background: "var(--color-background)" }}>
         <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
-            style={{ borderColor: "var(--color-primary-fixed)", borderTopColor: "var(--color-primary)" }}
-          />
+          <div className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
+            style={{ borderColor: "var(--color-primary-fixed)", borderTopColor: "var(--color-primary)" }} />
           <p style={{ color: "var(--color-on-surface-variant)", fontSize: 14 }}>Loading…</p>
         </div>
       </div>
@@ -73,23 +76,44 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AppShell({ session, children }: { session: NonNullable<ReturnType<typeof useSession>["data"]>; children: React.ReactNode }) {
+function AppShell({
+  session,
+  children,
+}: {
+  session: NonNullable<ReturnType<typeof useSession>["data"]>;
+  children: React.ReactNode;
+}) {
   const isOnline = useOnlineStatus();
   const pendingCount = useAppStore((s) => s.pendingCount);
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--color-background)" }}>
       <TopNav userName={session.user?.name ?? ""} userImage={session.user?.image ?? ""} />
+
+      {/* Offline banner — sits below TopNav on desktop (md:top-16), at top on mobile */}
       {!isOnline && (
-        <div className="fixed top-0 left-0 w-full z-50 flex items-center justify-center gap-2 py-1.5"
+        <div
+          className="fixed top-0 md:top-16 left-0 w-full z-40 flex items-center justify-center gap-2 py-1.5"
           style={{ background: "#37474f", color: "#fff", fontSize: 13, fontWeight: 500 }}>
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>wifi_off</span>
           Offline{pendingCount > 0 ? ` · ${pendingCount} pending` : " · viewing cached data"}
         </div>
       )}
-      <main style={{ paddingBottom: 96, paddingTop: !isOnline ? 32 : 0 }} className="md:pt-20">
+
+      {/*
+        Padding logic:
+        - Online  mobile:  pt-0   (no TopNav on mobile)
+        - Online  desktop: pt-20  (64px TopNav)
+        - Offline mobile:  pt-8   (32px banner)
+        - Offline desktop: pt-24  (64px TopNav + ~32px banner)
+      */}
+      <main
+        style={{ paddingBottom: 96 }}
+        className={isOnline ? "md:pt-20" : "pt-8 md:pt-24"}
+      >
         {children}
       </main>
+
       <BottomNav />
       <FAB />
     </div>

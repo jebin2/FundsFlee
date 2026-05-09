@@ -59,19 +59,28 @@ export default function AddPage() {
     };
 
     try {
-      // Optimistically save to local cache so it shows immediately offline
-      await saveLocalTransaction(tx as Transaction);
+      if (isOnline) {
+        // Online: call API first; save locally only after confirmed
+        const res = await fetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction: tx }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        await saveLocalTransaction(tx as Transaction);
+      } else {
+        // Offline: save locally + enqueue for later sync
+        await saveLocalTransaction(tx as Transaction);
+        await safeFetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction: tx }),
+          offlineBody: { transaction: tx },
+        });
+      }
 
-      const res = await safeFetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transaction: tx }),
-        offlineBody: { transaction: tx },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      router.push(!isOnline ? "/transactions" : "/dashboard");
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save. Try again.");
     } finally {

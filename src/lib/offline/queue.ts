@@ -9,9 +9,14 @@ export async function enqueueOp(method: string, url: string, body: unknown): Pro
   });
 }
 
-// Replay all queued ops in order. Stops on first network failure.
-export async function flushQueue(): Promise<void> {
+// Replay queued ops in order.
+// - 2xx: delete from queue (success)
+// - 4xx client error: delete and skip (will never succeed, discard)
+// - 401/403: auth expired — stop and signal caller
+// - 5xx / network error: stop and retry next time
+export async function flushQueue(): Promise<{ authExpired: boolean }> {
   const ops = await offlineDb.queue.orderBy("created_at").toArray();
+
   for (const op of ops) {
     try {
       const res = await fetch(op.url, {
@@ -19,14 +24,31 @@ export async function flushQueue(): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: op.body === "null" ? undefined : op.body,
       });
+
       if (res.ok) {
         await offlineDb.queue.delete(op.id!);
+        continue;
       }
-      // Non-OK but received = skip (don't retry bad requests)
+
+      if (res.status === 401 || res.status === 403) {
+        return { authExpired: true };
+      }
+
+      if (res.status >= 400 && res.status < 500) {
+        // Client error — this op will never succeed, discard it
+        await offlineDb.queue.delete(op.id!);
+        continue;
+      }
+
+      // 5xx — stop, retry on next flush
+      break;
     } catch {
-      break; // network gone again — stop and wait for next online event
+      // Network gone again — stop
+      break;
     }
   }
+
+  return { authExpired: false };
 }
 
 export async function pendingCount(): Promise<number> {

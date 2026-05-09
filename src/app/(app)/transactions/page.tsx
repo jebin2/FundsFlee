@@ -18,7 +18,6 @@ function groupByDate(txs: Transaction[]): Record<string, Transaction[]> {
 
 function TransactionsContent() {
   const searchParams = useSearchParams();
-  const [, _setTransactions] = useState<Transaction[]>([]);
   // Map: tx_id → list of pending suggestions for that tx
   const [suggestions, setSuggestions] = useState<Record<string, PendingSuggestion[]>>({});
   const [activeSuggTxId, setActiveSuggTxId] = useState<string | null>(null);
