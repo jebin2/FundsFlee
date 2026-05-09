@@ -10,7 +10,8 @@ export async function getLocalTransactions(): Promise<Transaction[]> {
 // Fetch from API and persist to IndexedDB — call when online
 export async function pullTransactions(): Promise<Transaction[]> {
   const res = await fetch("/api/transactions");
-  if (!res.ok) throw new Error("fetch failed");
+  if (res.status === 401) throw new Error("auth_expired");
+  if (!res.ok) throw new Error("fetch_failed");
   const { transactions } = await res.json() as { transactions: Transaction[] };
 
   // Replace local cache entirely

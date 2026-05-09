@@ -7,7 +7,6 @@ interface AppState {
   profile: UserProfile | null;
   isOnline: boolean;
   pendingCount: number;
-  sheetId: string | null;
 
   setTransactions: (txs: Transaction[]) => void;
   addTransaction: (tx: Transaction) => void;
@@ -17,7 +16,6 @@ interface AppState {
   setProfile: (profile: UserProfile) => void;
   setOnline: (online: boolean) => void;
   setPendingCount: (count: number) => void;
-  setSheetId: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -26,24 +24,28 @@ export const useAppStore = create<AppState>((set) => ({
   profile: null,
   isOnline: true,
   pendingCount: 0,
-  sheetId: null,
 
   setTransactions: (transactions) => set({ transactions }),
+
   addTransaction: (tx) =>
     set((s) => ({ transactions: [tx, ...s.transactions] })),
+
+  // Caller is responsible for also updating IndexedDB via patchLocalTransaction()
   updateTransaction: (id, updates) =>
     set((s) => ({
       transactions: s.transactions.map((t) =>
         t.id === id ? { ...t, ...updates } : t
       ),
     })),
+
+  // Caller is responsible for also updating IndexedDB via removeLocalTransaction()
   removeTransaction: (id) =>
     set((s) => ({
       transactions: s.transactions.filter((t) => t.id !== id),
     })),
+
   setCategories: (categories) => set({ categories }),
   setProfile: (profile) => set({ profile }),
   setOnline: (isOnline) => set({ isOnline }),
   setPendingCount: (pendingCount) => set({ pendingCount }),
-  setSheetId: (sheetId) => set({ sheetId }),
 }));

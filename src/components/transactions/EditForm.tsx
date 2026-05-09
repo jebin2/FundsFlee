@@ -3,6 +3,9 @@
 import { useState } from "react";
 import type { Transaction } from "@/types";
 import { CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
+import { useOfflineFetch } from "@/hooks/useOfflineFetch";
+import { patchLocalTransaction } from "@/lib/offline";
+import { useAppStore } from "@/store";
 
 export function EditForm({
   tx,
@@ -21,26 +24,39 @@ export function EditForm({
   const [notes, setNotes] = useState(tx.notes || "");
   const [saving, setSaving] = useState(false);
 
+  const { safeFetch } = useOfflineFetch();
+  const updateTransaction = useAppStore((s) => s.updateTransaction);
+
   async function save() {
-    if (!itemName.trim() || !amount) return;
+    if (saving || !itemName.trim() || !amount) return;
     setSaving(true);
+
+    const updates: Partial<Transaction> = {
+      item_name: itemName.trim(),
+      quantity: quantity.trim() || undefined,
+      merchant: merchant.trim() || "Unknown",
+      amount: parseFloat(amount),
+      date,
+      category,
+      payment_method: paymentMethod,
+      notes: notes.trim() || undefined,
+      status: "done",
+      updated_at: new Date().toISOString(),
+    };
+
     try {
-      await fetch(`/api/transactions/${tx.id}`, {
+      await safeFetch(`/api/transactions/${tx.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          item_name: itemName.trim(),
-          quantity: quantity.trim() || "",
-          merchant: merchant.trim() || "Unknown",
-          amount: parseFloat(amount),
-          date,
-          category,
-          payment_method: paymentMethod,
-          notes,
-          status: "done",
-        }),
+        body: JSON.stringify(updates),
+        offlineBody: updates,
       });
-      onSaved({ ...tx, item_name: itemName.trim(), quantity: quantity.trim() || undefined, merchant: merchant.trim() || "Unknown", amount: parseFloat(amount), date, category, payment_method: paymentMethod, notes, status: "done" });
+
+      // Keep store and IndexedDB in sync regardless of online/offline
+      updateTransaction(tx.id, updates);
+      await patchLocalTransaction(tx.id, updates);
+
+      onSaved({ ...tx, ...updates });
     } finally {
       setSaving(false);
     }
@@ -74,57 +90,40 @@ export function EditForm({
 
         <div className="flex flex-col gap-1">
           <label style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
             className="px-3 py-2.5 rounded-xl border outline-none"
-            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}
-          />
+            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }} />
         </div>
 
         <div className="flex flex-col gap-1">
           <label style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>Category</label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
+          <select value={category} onChange={(e) => setCategory(e.target.value)}
             className="px-3 py-2.5 rounded-xl border outline-none"
-            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}
-          >
+            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}>
             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
 
         <div className="flex flex-col gap-1">
           <label style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>Payment method</label>
-          <select
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as import("@/types").PaymentMethod)}
+          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as import("@/types").PaymentMethod)}
             className="px-3 py-2.5 rounded-xl border outline-none"
-            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}
-          >
+            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}>
             {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
           </select>
         </div>
 
         <div className="flex flex-col gap-1">
           <label style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>Notes (optional)</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
             className="px-3 py-2.5 rounded-xl border outline-none resize-none"
-            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }}
-          />
+            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface)", color: "var(--color-on-surface)", fontSize: 15 }} />
         </div>
       </div>
 
-      <button
-        onClick={save}
-        disabled={saving || !itemName.trim() || !amount}
+      <button onClick={save} disabled={saving || !itemName.trim() || !amount}
         className="w-full py-4 rounded-2xl font-semibold flex items-center justify-center gap-2"
-        style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", opacity: saving || !itemName.trim() || !amount ? 0.5 : 1 }}
-      >
+        style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", opacity: saving || !itemName.trim() || !amount ? 0.5 : 1 }}>
         <span className="material-symbols-outlined">check</span>
         {saving ? "Saving…" : "Save transaction"}
       </button>

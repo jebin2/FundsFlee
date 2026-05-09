@@ -6,7 +6,9 @@ import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
 import { EditForm } from "@/components/transactions/EditForm";
-import { offlineDb } from "@/lib/offline";
+import { offlineDb, removeLocalTransaction } from "@/lib/offline";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useAppStore } from "@/store";
 
 function InFlightView({ status }: { status: string }) {
   return (
@@ -28,6 +30,8 @@ function DetailContent({ id }: { id: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editMode = searchParams.get("edit") === "true";
+  const isOnline = useOnlineStatus();
+  const removeTransaction = useAppStore((s) => s.removeTransaction);
 
   const [tx, setTx] = useState<Transaction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,28 +58,50 @@ function DetailContent({ id }: { id: string }) {
     })();
   }, [id]);
 
-  // Poll while in-flight
+  // Poll while in-flight — only when online
   useEffect(() => {
-    if (!tx || !["queued", "processing"].includes(tx.status ?? "")) return;
+    if (!tx || !["queued", "processing"].includes(tx.status ?? "") || !isOnline) return;
     const timer = setInterval(async () => {
-      const d = await fetch("/api/transactions").then((r) => r.json());
-      const found = (d.transactions ?? []).find((t: Transaction) => t.id === id);
-      if (found) {
-        setTx(found);
-        if (found.status !== "queued" && found.status !== "processing") {
-          clearInterval(timer);
-          if (found.status === "failed") setIsEditing(true);
+      try {
+        const d = await fetch("/api/transactions").then((r) => r.json());
+        const found = (d.transactions ?? []).find((t: Transaction) => t.id === id);
+        if (found) {
+          setTx(found);
+          if (found.status !== "queued" && found.status !== "processing") {
+            clearInterval(timer);
+            if (found.status === "failed") setIsEditing(true);
+          }
         }
+      } catch {
+        clearInterval(timer); // Stop polling if network drops
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [tx?.status, id]);
+  }, [tx?.status, id, isOnline]);
 
   async function deleteTransaction() {
     if (!confirm("Delete this transaction?")) return;
     setDeleting(true);
-    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-    router.back();
+    try {
+      // Optimistically remove from store and IndexedDB immediately
+      removeTransaction(id);
+      await removeLocalTransaction(id);
+
+      if (isOnline) {
+        await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      } else {
+        // Queue for later sync
+        const { enqueueOp } = await import("@/lib/offline");
+        await enqueueOp("DELETE", `/api/transactions/${id}`, null);
+        const { pendingCount } = await import("@/lib/offline");
+        const { useAppStore: store } = await import("@/store");
+        store.getState().setPendingCount(await pendingCount());
+      }
+      router.back();
+    } catch {
+      // Even if API fails, local removal stands — queue will retry
+      router.back();
+    }
   }
 
   async function retryAI() {

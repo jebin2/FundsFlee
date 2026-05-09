@@ -19,7 +19,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     try {
       const txs = await pullTransactions();
       setTransactions(txs);
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message === "auth_expired") {
+        // Layout's fetch interceptor will handle sign-out on next API call
+        return;
+      }
       // Network unavailable — stay on local data
     } finally {
       syncing.current = false;

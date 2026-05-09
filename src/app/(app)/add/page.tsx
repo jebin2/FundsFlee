@@ -42,6 +42,7 @@ export default function AddPage() {
   }
 
   async function handleSave() {
+    if (saving) return; // Guard against double-tap
     setSubmitted(true);
     if (!amount || parseFloat(amount) <= 0) { setError("Enter an amount"); return; }
     if (!itemName.trim()) { setError("Enter an item name"); return; }
