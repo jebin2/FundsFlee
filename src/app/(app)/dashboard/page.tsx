@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { Transaction } from "@/types";
 import { useProfile } from "@/hooks/useProfile";
 import { TransactionRow, formatINR, categoryIcons } from "@/components/TransactionRow";
+import { useTransactions } from "@/hooks/useTransactions";
 
 type Period = "week" | "month" | "year";
 
@@ -28,22 +28,11 @@ export default function DashboardPage() {
   const { data: session } = useSession();
   const { profile } = useProfile();
   const router = useRouter();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const { transactions, refresh } = useTransactions();
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("month");
 
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/transactions");
-      const data = await res.json();
-      setTransactions(data.transactions ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -51,8 +40,9 @@ export default function DashboardPage() {
       router.replace("/onboarding");
       return;
     }
-    loadData();
-  }, [session, loadData, router]);
+    refresh().finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, router]);
 
   const { from, to } = getDateRange(period);
   const filtered = transactions.filter(

@@ -6,6 +6,9 @@ import { useEffect, useRef } from "react";
 import { TopNav } from "@/components/layout/TopNav";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { FAB } from "@/components/layout/FAB";
+import { SyncProvider } from "@/providers/SyncProvider";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useAppStore } from "@/store";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -64,9 +67,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!session) return null;
 
   return (
+    <SyncProvider>
+      <AppShell session={session}>{children}</AppShell>
+    </SyncProvider>
+  );
+}
+
+function AppShell({ session, children }: { session: NonNullable<ReturnType<typeof useSession>["data"]>; children: React.ReactNode }) {
+  const isOnline = useOnlineStatus();
+  const pendingCount = useAppStore((s) => s.pendingCount);
+
+  return (
     <div style={{ minHeight: "100dvh", background: "var(--color-background)" }}>
       <TopNav userName={session.user?.name ?? ""} userImage={session.user?.image ?? ""} />
-      <main style={{ paddingBottom: 96 }} className="md:pt-20">
+      {!isOnline && (
+        <div className="fixed top-0 left-0 w-full z-50 flex items-center justify-center gap-2 py-1.5"
+          style={{ background: "#37474f", color: "#fff", fontSize: 13, fontWeight: 500 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>wifi_off</span>
+          Offline{pendingCount > 0 ? ` · ${pendingCount} pending` : " · viewing cached data"}
+        </div>
+      )}
+      <main style={{ paddingBottom: 96, paddingTop: !isOnline ? 32 : 0 }} className="md:pt-20">
         {children}
       </main>
       <BottomNav />

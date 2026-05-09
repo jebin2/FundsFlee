@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import type { Transaction } from "@/types";
 import type { PendingSuggestion } from "@/app/api/items/suggestions/route";
 import { TransactionRow, formatINR } from "@/components/TransactionRow";
+import { useTransactions } from "@/hooks/useTransactions";
 
 function groupByDate(txs: Transaction[]): Record<string, Transaction[]> {
   const groups: Record<string, Transaction[]> = {};
@@ -17,7 +18,7 @@ function groupByDate(txs: Transaction[]): Record<string, Transaction[]> {
 
 function TransactionsContent() {
   const searchParams = useSearchParams();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [, _setTransactions] = useState<Transaction[]>([]);
   // Map: tx_id → list of pending suggestions for that tx
   const [suggestions, setSuggestions] = useState<Record<string, PendingSuggestion[]>>({});
   const [activeSuggTxId, setActiveSuggTxId] = useState<string | null>(null);
@@ -35,16 +36,15 @@ function TransactionsContent() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const processingRef = useRef<Set<string>>(new Set());
 
+  const { transactions, refresh } = useTransactions();
+
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/transactions");
-      const data = await res.json();
-      const txs: Transaction[] = data.transactions ?? [];
-      setTransactions(txs);
-      return txs;
+      return await refresh();
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load pending suggestions and trigger background normalization

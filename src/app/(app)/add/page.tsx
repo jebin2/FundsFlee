@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Transaction, PaymentMethod } from "@/types";
 import { CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
+import { useOfflineFetch } from "@/hooks/useOfflineFetch";
+import { saveLocalTransaction } from "@/lib/offline";
 
 function formatINR(n: number) {
   return n === 0 ? "0" : n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -23,6 +25,7 @@ export default function AddPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const { safeFetch, isOnline } = useOfflineFetch();
 
   const displayAmount = amount ? parseFloat(amount) : 0;
 
@@ -56,15 +59,19 @@ export default function AddPage() {
     };
 
     try {
-      const res = await fetch("/api/transactions", {
+      // Optimistically save to local cache so it shows immediately offline
+      await saveLocalTransaction(tx as Transaction);
+
+      const res = await safeFetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transaction: tx }),
+        offlineBody: { transaction: tx },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      router.push("/dashboard");
+      router.push(!isOnline ? "/transactions" : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save. Try again.");
     } finally {
