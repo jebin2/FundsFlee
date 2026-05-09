@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getMetaValues, setMetaValue } from "@/lib/sheets";
+import { apiError } from "@/lib/api-error";
 
 export async function GET() {
   const session = await auth();
@@ -20,8 +21,7 @@ export async function GET() {
       sheet_url: meta.sheet_url ?? "",
     });
   } catch (err) {
-    console.error("GET profile error:", err);
-    return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
+    return apiError("GET profile error", err);
   }
 }
 
@@ -42,7 +42,6 @@ export async function PUT(req: NextRequest) {
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("PUT profile error:", err);
-    return NextResponse.json({ error: "Failed to save profile" }, { status: 500 });
+    return apiError("PUT profile error", err);
   }
 }

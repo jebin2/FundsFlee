@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resetSheet } from "@/lib/sheets";
+import { apiError } from "@/lib/api-error";
 
 export async function POST() {
   const session = await auth();
@@ -12,7 +13,6 @@ export async function POST() {
     await resetSheet(session.access_token, session.sheet_id);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Reset error:", err);
-    return NextResponse.json({ error: "Reset failed" }, { status: 500 });
+    return apiError("Reset error", err);
   }
 }

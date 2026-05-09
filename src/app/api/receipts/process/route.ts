@@ -9,6 +9,7 @@ import {
 } from "@/lib/sheets";
 import { parseReceiptImage } from "@/lib/ai/parse-image";
 import { checkDuplicate } from "@/lib/ai/dedup";
+import { apiError } from "@/lib/api-error";
 import type { Transaction } from "@/types";
 
 export const maxDuration = 300;
@@ -104,8 +105,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, txId: receiptId, itemCount: receipt.items.length });
   } catch (err) {
-    console.error("Receipt processing error:", err);
     await updateTransactionField(session.access_token, sheetId, txId, { status: "failed" }).catch(() => {});
-    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+    return apiError("Receipt processing error", err);
   }
 }

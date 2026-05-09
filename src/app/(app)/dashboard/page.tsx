@@ -77,9 +77,6 @@ export default function DashboardPage() {
           <p style={{ fontSize: 22, fontWeight: 700, color: "var(--color-on-background)" }}>Hi, {firstName} 👋</p>
           <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</p>
         </div>
-        <Link href="/add" className="w-10 h-10 rounded-full flex items-center justify-center md:hidden" style={{ background: "var(--color-primary)", color: "#fff" }}>
-          <span className="material-symbols-outlined">add</span>
-        </Link>
       </div>
 
       {/* Period selector */}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { parseReceiptImage } from "@/lib/ai/parse-image";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -27,7 +28,6 @@ export async function POST(req: NextRequest) {
     const extracted = await parseReceiptImage(base64, mediaType, region ?? undefined, today);
     return NextResponse.json({ extracted, confidence: extracted.confidence });
   } catch (err) {
-    console.error("Parse image error:", err);
-    return NextResponse.json({ error: "Failed to parse image" }, { status: 500 });
+    return apiError("Parse image error", err);
   }
 }

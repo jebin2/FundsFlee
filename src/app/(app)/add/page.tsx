@@ -3,14 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Transaction, PaymentMethod } from "@/types";
-
-const CATEGORIES = [
-  "Food & Dining", "Transport", "Shopping", "Entertainment",
-  "Health", "Bills & Utilities", "Education", "Personal Care",
-  "Gifts & Donations", "Others",
-];
-
-const PAYMENT_METHODS: PaymentMethod[] = ["UPI", "Card", "Cash", "NetBanking", "Other"];
+import { CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
 
 function formatINR(n: number) {
   return n === 0 ? "0" : n.toLocaleString("en-IN", { maximumFractionDigits: 0 });

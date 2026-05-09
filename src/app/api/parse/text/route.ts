@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { parseTransactionText } from "@/lib/ai/parse-text";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -16,7 +17,6 @@ export async function POST(req: NextRequest) {
     const extracted = await parseTransactionText(text, region, today);
     return NextResponse.json({ extracted, confidence: extracted.confidence });
   } catch (err) {
-    console.error("Parse text error:", err);
-    return NextResponse.json({ error: "Failed to parse text" }, { status: 500 });
+    return apiError("Parse text error", err);
   }
 }

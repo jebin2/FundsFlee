@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getOrCreateReceiptsFolder, uploadReceiptToDrive, appendTransaction } from "@/lib/sheets";
+import { apiError } from "@/lib/api-error";
 import type { Transaction } from "@/types";
 
 export const maxDuration = 60;
@@ -45,7 +46,6 @@ export async function POST(req: NextRequest) {
     await appendTransaction(session.access_token, session.sheet_id, tx);
     return NextResponse.json({ txId, receiptUrl: viewUrl });
   } catch (err) {
-    console.error("Receipt upload error:", err);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    return apiError("Receipt upload error", err);
   }
 }

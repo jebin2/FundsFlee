@@ -6,6 +6,7 @@ declare module "next-auth" {
     refresh_token: string;
     sheet_id: string;
     sheet_is_new: boolean;
+    error?: "RefreshTokenError";
   }
 }
 
@@ -16,5 +17,6 @@ declare module "next-auth/jwt" {
     expires_at?: number;
     sheet_id?: string;
     sheet_is_new?: boolean;
+    error?: "RefreshTokenError";
   }
 }

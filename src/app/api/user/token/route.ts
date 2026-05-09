@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { SignJWT } from "jose";
 import { getMetaValues, setMetaValue } from "@/lib/sheets";
+import { apiError } from "@/lib/api-error";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me");
 
@@ -28,8 +29,7 @@ export async function GET() {
     await setMetaValue(session.access_token, session.sheet_id, "shortcut_token", token);
     return NextResponse.json({ token });
   } catch (err) {
-    console.error("GET token error:", err);
-    return NextResponse.json({ error: "Failed to get token" }, { status: 500 });
+    return apiError("GET token error", err);
   }
 }
 
@@ -44,7 +44,6 @@ export async function POST() {
     await setMetaValue(session.access_token, session.sheet_id, "shortcut_token", token);
     return NextResponse.json({ token });
   } catch (err) {
-    console.error("POST token error:", err);
-    return NextResponse.json({ error: "Failed to rotate token" }, { status: 500 });
+    return apiError("POST token error", err);
   }
 }

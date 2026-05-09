@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { appendTransaction, getTransactions } from "@/lib/sheets";
 import { checkDuplicate } from "@/lib/ai/dedup";
+import { apiError } from "@/lib/api-error";
 import type { Transaction } from "@/types";
 
 export async function GET() {
@@ -14,8 +15,7 @@ export async function GET() {
     const transactions = await getTransactions(session.access_token, session.sheet_id);
     return NextResponse.json({ transactions });
   } catch (err) {
-    console.error("GET transactions error:", err);
-    return NextResponse.json({ error: "Failed to fetch transactions" }, { status: 500 });
+    return apiError("GET transactions error", err);
   }
 }
 
@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       duplicate: dedupResult.is_duplicate && dedupResult.confidence > 0.7 ? dedupResult : null,
     });
   } catch (err) {
-    console.error("POST transaction error:", err);
-    return NextResponse.json({ error: "Failed to save transaction" }, { status: 500 });
+    return apiError("POST transaction error", err);
   }
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { TopNav } from "@/components/layout/TopNav";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { FAB } from "@/components/layout/FAB";
@@ -10,12 +10,42 @@ import { FAB } from "@/components/layout/FAB";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const signingOut = useRef(false);
+
+  function triggerSignOut() {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    signOut({ callbackUrl: "/" });
+  }
+
+  // Intercept 401 responses from our own API — fires signOut immediately
+  // regardless of whether the JWT refresh cycle has caught up yet.
+  useEffect(() => {
+    const original = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await original(...args);
+      const url = typeof args[0] === "string" ? args[0] : args[0]?.toString?.() ?? "";
+      if (res.status === 401 && url.startsWith("/api/")) {
+        triggerSignOut();
+      }
+      return res;
+    };
+    return () => { window.fetch = original; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/");
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (session?.error === "RefreshTokenError") {
+      triggerSignOut();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.error]);
 
   if (status === "loading") {
     return (
