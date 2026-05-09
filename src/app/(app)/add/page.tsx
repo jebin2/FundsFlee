@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Transaction, PaymentMethod } from "@/types";
 import { CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
@@ -26,6 +26,19 @@ export default function AddPage() {
   const [submitted, setSubmitted] = useState(false);
   const { safeFetch } = useOfflineFetch();
   const addTransaction = useAppStore((s) => s.addTransaction);
+  const amountDisplayRef = useRef<HTMLDivElement>(null);
+  const [amountHidden, setAmountHidden] = useState(false);
+
+  useEffect(() => {
+    const el = amountDisplayRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setAmountHidden(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const displayAmount = amount ? parseFloat(amount) : 0;
 
@@ -99,6 +112,11 @@ export default function AddPage() {
           <span className="material-symbols-outlined" style={{ color: "var(--color-on-surface-variant)" }}>arrow_back</span>
         </button>
         <h1 className="flex-1 font-semibold" style={{ fontSize: 20 }}>Add Expense</h1>
+        {amountHidden && (
+          <span className="font-semibold" style={{ fontSize: 16, color: "var(--color-on-surface)" }}>
+            {displayAmount > 0 ? formatINR(displayAmount) : "₹0"}
+          </span>
+        )}
         <button
           onClick={handleSave}
           disabled={saving}
@@ -113,7 +131,7 @@ export default function AddPage() {
       </div>
 
       {/* Amount display */}
-      <div className="flex flex-col items-center py-8 px-5">
+      <div ref={amountDisplayRef} className="flex flex-col items-center py-8 px-5">
         <p style={{ fontSize: 13, color: "var(--color-outline)", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" }}>Amount (₹)</p>
         <div className={`flex items-baseline gap-2 mt-2 px-6 py-2 rounded-2xl transition-all ${submitted && (!amount || parseFloat(amount) <= 0) ? "ring-2 ring-red-500" : ""}`}>
           <span style={{ fontSize: 48, fontWeight: 700, color: displayAmount > 0 ? "var(--color-on-background)" : "var(--color-outline-variant)" }}>
