@@ -90,13 +90,28 @@ function AppShell({
     <div style={{ minHeight: "100dvh", background: "var(--color-background)" }}>
       <TopNav userName={session.user?.name ?? ""} userImage={session.user?.image ?? ""} />
 
-      {/* Offline banner — sits below TopNav on desktop (md:top-16), at top on mobile */}
-      {!isOnline && (
+      {/* Status banner — offline or syncing pending ops */}
+      {(!isOnline || pendingCount > 0) && (
         <div
           className="fixed top-0 md:top-16 left-0 w-full z-40 flex items-center justify-center gap-2 py-1.5"
-          style={{ background: "#37474f", color: "#fff", fontSize: 13, fontWeight: 500 }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>wifi_off</span>
-          Offline{pendingCount > 0 ? ` · ${pendingCount} pending` : " · viewing cached data"}
+          style={{
+            background: !isOnline ? "#37474f" : "var(--color-secondary-container)",
+            color: !isOnline ? "#fff" : "var(--color-on-secondary-container)",
+            fontSize: 13,
+            fontWeight: 500,
+          }}>
+          {!isOnline ? (
+            <>
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>wifi_off</span>
+              {pendingCount > 0 ? `Offline · ${pendingCount} pending` : "Offline · viewing cached data"}
+            </>
+          ) : (
+            <>
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
+                style={{ borderColor: "var(--color-secondary)", borderTopColor: "var(--color-on-secondary-container)" }} />
+              {`Syncing ${pendingCount} pending…`}
+            </>
+          )}
         </div>
       )}
 
@@ -109,7 +124,7 @@ function AppShell({
       */}
       <main
         style={{ paddingBottom: 96 }}
-        className={isOnline ? "md:pt-20" : "pt-8 md:pt-24"}
+        className={(!isOnline || pendingCount > 0) ? "pt-8 md:pt-24" : "md:pt-20"}
       >
         {children}
       </main>

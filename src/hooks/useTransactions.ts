@@ -1,22 +1,25 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useAppStore } from "@/store";
 import { pullTransactions } from "@/lib/offline";
 
 export function useTransactions() {
   const transactions = useAppStore((s) => s.transactions);
   const setTransactions = useAppStore((s) => s.setTransactions);
+  const refreshing = useRef(false);
 
-  // Stable reference — reads latest store state via setter, not closure
   const refresh = useCallback(async () => {
+    if (refreshing.current) return useAppStore.getState().transactions;
+    refreshing.current = true;
     try {
       const txs = await pullTransactions();
       setTransactions(txs);
       return txs;
     } catch {
-      // Offline — return current store snapshot (never stale via selector)
       return useAppStore.getState().transactions;
+    } finally {
+      refreshing.current = false;
     }
   }, [setTransactions]);
 

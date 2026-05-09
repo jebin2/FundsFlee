@@ -8,6 +8,7 @@ import { getLocalTransactions } from "@/lib/offline";
 export function ReceiptItemsPopup({ receiptId, onClose }: { receiptId: string; onClose: () => void }) {
   const [items, setItems] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fromCache, setFromCache] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -28,6 +29,7 @@ export function ReceiptItemsPopup({ receiptId, onClose }: { receiptId: string; o
             .filter((t) => t.receipt_id === receiptId)
             .sort((a, b) => a.item_name?.localeCompare(b.item_name ?? "") ?? 0)
         );
+        setFromCache(true);
       } finally {
         setLoading(false);
       }
@@ -45,7 +47,12 @@ export function ReceiptItemsPopup({ receiptId, onClose }: { receiptId: string; o
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div>
             <p style={{ fontSize: 17, fontWeight: 700, color: "var(--color-on-surface)" }}>All items from this receipt</p>
-            {!loading && <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>{items.length} items · {formatINR(total)} total</p>}
+            {!loading && (
+              <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>
+                {items.length} items · {formatINR(total)} total
+                {fromCache && " · cached"}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center"
             style={{ background: "var(--color-surface-container)" }}>

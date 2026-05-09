@@ -6,7 +6,7 @@ import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
 import { EditForm } from "@/components/transactions/EditForm";
-import { offlineDb, removeLocalTransaction } from "@/lib/offline";
+import { offlineDb, removeLocalTransaction, enqueueOp, pendingCount } from "@/lib/offline";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useAppStore } from "@/store";
 
@@ -83,24 +83,25 @@ function DetailContent({ id }: { id: string }) {
     if (!confirm("Delete this transaction?")) return;
     setDeleting(true);
     try {
-      // Optimistically remove from store and IndexedDB immediately
+      // Optimistically remove from store and IndexedDB
       removeTransaction(id);
       await removeLocalTransaction(id);
 
       if (isOnline) {
-        await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+        const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Delete failed on server");
       } else {
-        // Queue for later sync
-        const { enqueueOp } = await import("@/lib/offline");
         await enqueueOp("DELETE", `/api/transactions/${id}`, null);
-        const { pendingCount } = await import("@/lib/offline");
-        const { useAppStore: store } = await import("@/store");
-        store.getState().setPendingCount(await pendingCount());
+        useAppStore.getState().setPendingCount(await pendingCount());
       }
       router.back();
-    } catch {
-      // Even if API fails, local removal stands — queue will retry
+    } catch (err) {
+      console.error("Delete error:", err);
+      // Local removal already happened — don't restore it.
+      // The queue will retry or the next sync will reconcile.
       router.back();
+    } finally {
+      setDeleting(false);
     }
   }
 

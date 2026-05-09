@@ -27,11 +27,13 @@ export async function POST(req: NextRequest) {
   const { transaction } = await req.json() as { transaction: Transaction };
 
   try {
+    const now = new Date().toISOString();
     const tx: Transaction = {
       ...transaction,
       id: transaction.id || crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      // Preserve client timestamps for offline-created transactions
+      created_at: transaction.created_at || now,
+      updated_at: now,
     };
 
     await appendTransaction(session.access_token, session.sheet_id, tx);

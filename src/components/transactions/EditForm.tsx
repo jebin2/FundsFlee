@@ -45,17 +45,21 @@ export function EditForm({
     };
 
     try {
-      await safeFetch(`/api/transactions/${tx.id}`, {
+      const res = await safeFetch(`/api/transactions/${tx.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
         offlineBody: updates,
       });
 
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Save failed");
+      }
+
       // Keep store and IndexedDB in sync regardless of online/offline
       updateTransaction(tx.id, updates);
       await patchLocalTransaction(tx.id, updates);
-
       onSaved({ ...tx, ...updates });
     } finally {
       setSaving(false);

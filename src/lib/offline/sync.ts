@@ -7,17 +7,24 @@ export async function getLocalTransactions(): Promise<Transaction[]> {
   return txs;
 }
 
-// Fetch from API and persist to IndexedDB — call when online
+// Fetch from API and persist to IndexedDB — call when online.
+// Write-first strategy: bulkPut new data, then delete stale rows.
+// This is atomic-safe — if the app crashes mid-write, old data is still readable.
 export async function pullTransactions(): Promise<Transaction[]> {
   const res = await fetch("/api/transactions");
   if (res.status === 401) throw new Error("auth_expired");
   if (!res.ok) throw new Error("fetch_failed");
   const { transactions } = await res.json() as { transactions: Transaction[] };
 
-  // Replace local cache entirely
-  await offlineDb.transactions.clear();
   if (transactions.length > 0) {
     await offlineDb.transactions.bulkPut(transactions);
+  }
+  // Remove rows that no longer exist on the server
+  const serverIds = new Set(transactions.map((t) => t.id));
+  const localIds = await offlineDb.transactions.toCollection().primaryKeys() as string[];
+  const staleIds = localIds.filter((id) => !serverIds.has(id));
+  if (staleIds.length > 0) {
+    await offlineDb.transactions.bulkDelete(staleIds);
   }
   return transactions;
 }
