@@ -6,6 +6,7 @@ import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
 import { EditForm } from "@/components/transactions/EditForm";
+import { offlineDb } from "@/lib/offline";
 
 function InFlightView({ status }: { status: string }) {
   return (
@@ -36,14 +37,21 @@ function DetailContent({ id }: { id: string }) {
   const [isEditing, setIsEditing] = useState(editMode);
 
   useEffect(() => {
-    fetch("/api/transactions")
-      .then((r) => r.json())
-      .then((d) => {
-        const found = (d.transactions ?? []).find((t: Transaction) => t.id === id);
-        setTx(found ?? null);
+    (async () => {
+      try {
+        const r = await fetch("/api/transactions");
+        const d = await r.json();
+        const found = (d.transactions ?? []).find((t: Transaction) => t.id === id) ?? null;
+        setTx(found);
         if (found?.status === "failed") setIsEditing(true);
-      })
-      .finally(() => setLoading(false));
+      } catch {
+        // Offline — read from local cache
+        const found = await offlineDb.transactions.get(id) ?? null;
+        setTx(found);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [id]);
 
   // Poll while in-flight

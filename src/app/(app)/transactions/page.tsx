@@ -7,6 +7,7 @@ import type { Transaction } from "@/types";
 import type { PendingSuggestion } from "@/app/api/items/suggestions/route";
 import { TransactionRow, formatINR } from "@/components/TransactionRow";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 function groupByDate(txs: Transaction[]): Record<string, Transaction[]> {
   const groups: Record<string, Transaction[]> = {};
@@ -18,6 +19,7 @@ function groupByDate(txs: Transaction[]): Record<string, Transaction[]> {
 
 function TransactionsContent() {
   const searchParams = useSearchParams();
+  const isOnline = useOnlineStatus();
   // Map: tx_id → list of pending suggestions for that tx
   const [suggestions, setSuggestions] = useState<Record<string, PendingSuggestion[]>>({});
   const [activeSuggTxId, setActiveSuggTxId] = useState<string | null>(null);
@@ -116,11 +118,12 @@ function TransactionsContent() {
     });
   }, [loadData, triggerProcessing, loadSuggestions]);
 
-  // Poll every 5s while any entry is queued or processing
+  // Poll every 5s while online and any entry is queued or processing
   useEffect(() => {
     const hasInFlight = transactions.some((t) => t.status === "queued" || t.status === "processing");
+    const shouldPoll = hasInFlight && isOnline;
 
-    if (hasInFlight && !pollRef.current) {
+    if (shouldPoll && !pollRef.current) {
       pollRef.current = setInterval(async () => {
         const txs = await loadData();
         if (txs) {
@@ -134,7 +137,7 @@ function TransactionsContent() {
       }, 5000);
     }
 
-    if (!hasInFlight && pollRef.current) {
+    if (!shouldPoll && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
@@ -142,7 +145,7 @@ function TransactionsContent() {
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
-  }, [transactions, loadData, triggerProcessing]);
+  }, [transactions, loadData, triggerProcessing, isOnline]);
 
   const categories = [...new Set(transactions.map((t) => t.category).filter((c) => c && c !== "Others"))].sort();
 

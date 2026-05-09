@@ -3,6 +3,31 @@
 import { useAppStore } from "@/store";
 import { enqueueOp, pendingCount } from "@/lib/offline";
 
+function parseBody(options: RequestInit & { offlineBody?: unknown }): unknown {
+  if (options.offlineBody !== undefined) return options.offlineBody;
+  if (!options.body) return null;
+  try {
+    return JSON.parse(options.body as string);
+  } catch {
+    return options.body; // Fallback: store raw string
+  }
+}
+
+async function queueMutation(
+  method: string,
+  url: string,
+  options: RequestInit & { offlineBody?: unknown },
+  setPendingCount: (n: number) => void
+): Promise<Response> {
+  await enqueueOp(method, url, parseBody(options));
+  const count = await pendingCount();
+  setPendingCount(count);
+  return new Response(JSON.stringify({ ok: true, offline: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export function useOfflineFetch() {
   const { isOnline, setPendingCount } = useAppStore();
 
@@ -10,24 +35,23 @@ export function useOfflineFetch() {
     url: string,
     options: RequestInit & { offlineBody?: unknown } = {}
   ): Promise<Response> {
-    if (isOnline) {
-      return fetch(url, options);
-    }
-
-    // Offline — queue the mutation and return a fake success response
     const method = options.method ?? "GET";
-    if (method !== "GET") {
-      const body = options.offlineBody ?? (options.body ? JSON.parse(options.body as string) : null);
-      await enqueueOp(method, url, body);
-      const count = await pendingCount();
-      setPendingCount(count);
+
+    if (!isOnline) {
+      if (method === "GET") throw new Error("Offline: cannot fetch");
+      return queueMutation(method, url, options, setPendingCount);
     }
 
-    // Return a fake 200 so callers don't need to handle offline specially
-    return new Response(JSON.stringify({ ok: true, offline: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    // Online path — but network may drop mid-request
+    try {
+      return await fetch(url, options);
+    } catch {
+      // Network dropped during the request — queue mutation, fail reads
+      if (method !== "GET") {
+        return queueMutation(method, url, options, setPendingCount);
+      }
+      throw new Error("Network error");
+    }
   }
 
   return { safeFetch, isOnline };

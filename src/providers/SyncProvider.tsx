@@ -20,25 +20,27 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       const txs = await pullTransactions();
       setTransactions(txs);
     } catch {
-      // network unavailable — stay on local data
+      // Network unavailable — stay on local data
     } finally {
       syncing.current = false;
     }
   }
 
   useEffect(() => {
-    // 1. Load local data immediately (instant render while API fetches)
-    getLocalTransactions().then((txs) => {
-      if (txs.length > 0) setTransactions(txs);
-    });
+    // Sequential init: local first (instant) → then API (fresh)
+    // Running them concurrently risks local data overwriting fresher API data.
+    (async () => {
+      const localTxs = await getLocalTransactions();
+      if (localTxs.length > 0) setTransactions(localTxs);
 
-    // 2. Pull fresh data from API
-    sync();
+      // Restore pending count from last session
+      const count = await pendingCount();
+      if (count > 0) setPendingCount(count);
 
-    // 3. Set initial online state
-    setOnline(navigator.onLine);
+      setOnline(navigator.onLine);
+      await sync();
+    })();
 
-    // Define handlers inside effect so cleanup references the same instances
     const handleOffline = () => setOnline(false);
 
     const handleOnline = async () => {

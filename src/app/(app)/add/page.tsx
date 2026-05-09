@@ -6,6 +6,7 @@ import type { Transaction, PaymentMethod } from "@/types";
 import { CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
 import { useOfflineFetch } from "@/hooks/useOfflineFetch";
 import { saveLocalTransaction } from "@/lib/offline";
+import { useAppStore } from "@/store";
 
 function formatINR(n: number) {
   return n === 0 ? "0" : n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -26,6 +27,7 @@ export default function AddPage() {
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const { safeFetch, isOnline } = useOfflineFetch();
+  const addTransaction = useAppStore((s) => s.addTransaction);
 
   const displayAmount = amount ? parseFloat(amount) : 0;
 
@@ -46,7 +48,8 @@ export default function AddPage() {
     setError("");
     setSaving(true);
 
-    const tx: Partial<Transaction> = {
+    const now = new Date().toISOString();
+    const tx: Transaction = {
       id: crypto.randomUUID(),
       date, time, amount: parseFloat(amount),
       item_name: itemName.trim(),
@@ -56,11 +59,14 @@ export default function AddPage() {
       payment_method: paymentMethod,
       notes: notes.trim() || undefined,
       source: "manual",
+      created_at: now,
+      updated_at: now,
+      status: "done",
     };
 
     try {
       if (isOnline) {
-        // Online: call API first; save locally only after confirmed
+        // Online: API first — server stamps timestamps and confirms
         const res = await fetch("/api/transactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -68,10 +74,13 @@ export default function AddPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        await saveLocalTransaction(tx as Transaction);
+        const saved: Transaction = data.transaction ?? tx;
+        await saveLocalTransaction(saved);
+        addTransaction(saved);
       } else {
-        // Offline: save locally + enqueue for later sync
-        await saveLocalTransaction(tx as Transaction);
+        // Offline: persist locally + update store + enqueue
+        await saveLocalTransaction(tx);
+        addTransaction(tx);
         await safeFetch("/api/transactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
