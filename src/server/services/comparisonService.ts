@@ -8,14 +8,10 @@ import {
   upsertAnalysisCacheRow,
 } from "@/lib/sheets";
 import type { CompareResult } from "@/types";
+import type { SheetSession } from "./types";
 
 const COMPARE_CELL_LIMIT = 40000;
 const CACHE_FRESH_MS = 24 * 60 * 60 * 1000;
-
-interface SheetSession {
-  accessToken: string;
-  sheetId: string;
-}
 
 interface ComparisonRequest {
   merchants?: string[];

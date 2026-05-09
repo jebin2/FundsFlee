@@ -8,14 +8,10 @@ import {
   upsertAnalysisCacheRow,
 } from "@/lib/sheets";
 import type { AnalysisResult } from "@/types";
+import type { SheetSession } from "./types";
 
 const ANALYSIS_CELL_LIMIT = 40000;
 const CACHE_FRESH_MS = 24 * 60 * 60 * 1000;
-
-interface SheetSession {
-  accessToken: string;
-  sheetId: string;
-}
 
 interface AnalysisRequest {
   period?: string;
