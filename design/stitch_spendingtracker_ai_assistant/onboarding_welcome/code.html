@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Onboarding Step 1 - SpendWise</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline": "#777584",
+                        "surface-dim": "#dcd8e3",
+                        "secondary-fixed": "#e1e0ff",
+                        "on-secondary-fixed-variant": "#2f2ebe",
+                        "surface-container-high": "#eae6f1",
+                        "surface-container-low": "#f6f2fc",
+                        "inverse-surface": "#303037",
+                        "surface-tint": "#544fc0",
+                        "on-background": "#1b1b22",
+                        "on-secondary-fixed": "#07006c",
+                        "error": "#ba1a1a",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-primary": "#c3c0ff",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f3eff9",
+                        "outline-variant": "#c8c4d5",
+                        "tertiary-fixed-dim": "#b8c4ff",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-primary-container": "#a9a7ff",
+                        "primary": "#1f108e",
+                        "secondary-container": "#6063ee",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "tertiary": "#162766",
+                        "secondary-fixed-dim": "#c0c1ff",
+                        "on-tertiary-container": "#9dacf3",
+                        "on-primary-fixed-variant": "#3b35a7",
+                        "surface-container-highest": "#e4e1eb",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#3730a3",
+                        "secondary": "#4648d4",
+                        "surface": "#fcf8ff",
+                        "on-surface-variant": "#464553",
+                        "tertiary-container": "#2f3e7e",
+                        "surface-container": "#f0ecf6",
+                        "background": "#fcf8ff",
+                        "on-secondary-container": "#fffbff",
+                        "on-surface": "#1b1b22",
+                        "on-tertiary-fixed": "#001354",
+                        "surface-variant": "#e4e1eb",
+                        "surface-bright": "#fcf8ff",
+                        "on-tertiary-fixed-variant": "#334282",
+                        "primary-fixed": "#e2dfff",
+                        "tertiary-fixed": "#dde1ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "container-margin": "20px",
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "gutter-md": "16px",
+                        "base": "8px"
+                    },
+                    "fontFamily": {
+                        "title-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "title-lg": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col items-center justify-center">
+<!-- Mobile Viewport Container -->
+<div class="w-full max-w-[390px] min-h-screen bg-surface-container-lowest flex flex-col relative overflow-hidden shadow-lg border border-surface-variant mx-auto">
+<!-- Header / Progress Area -->
+<header class="pt-12 pb-6 px-container-margin flex justify-center items-center shrink-0">
+<!-- Progress Dots -->
+<div class="flex items-center space-x-2">
+<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-surface-variant"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-surface-variant"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-surface-variant"></div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col px-container-margin overflow-y-auto pb-stack-lg">
+<!-- Illustration Area -->
+<div class="flex justify-center items-center py-stack-lg shrink-0">
+<div class="relative w-48 h-48 flex justify-center items-center bg-surface-container rounded-[2rem] shadow-sm">
+<!-- Base Google Sheets-like icon representation -->
+<span class="material-symbols-outlined text-[80px] text-primary" style="font-variation-settings: 'FILL' 1;">
+                        description
+                    </span>
+<!-- AI Sparkle Overlay -->
+<div class="absolute -top-2 -right-2 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center">
+<span class="material-symbols-outlined text-3xl text-secondary-container" style="font-variation-settings: 'FILL' 1;">
+                            magic_button
+                        </span>
+</div>
+<!-- Decorative elements -->
+<div class="absolute bottom-4 left-4 w-6 h-6 bg-tertiary-fixed rounded-full opacity-50 blur-sm"></div>
+<div class="absolute top-8 right-8 w-8 h-8 bg-primary-fixed rounded-full opacity-40 blur-md"></div>
+</div>
+</div>
+<!-- Typography & Copy -->
+<div class="text-center mt-stack-md shrink-0">
+<h1 class="font-display-lg text-display-lg text-on-surface mb-stack-sm tracking-tight">Your money, your sheet</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xs mx-auto">
+                    SpendWise saves everything to a Google Sheet in your Drive. You own it. We just make it smart.
+                </p>
+</div>
+<!-- Features List -->
+<div class="mt-stack-lg bg-surface rounded-xl p-stack-md border border-surface-variant shadow-sm shrink-0">
+<ul class="space-y-4">
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary mr-3 mt-0.5 shrink-0" style="font-variation-settings: 'FILL' 1;">
+                            check_circle
+                        </span>
+<span class="font-body-sm text-body-sm text-on-surface">We'll create one Sheet in your Google Drive</span>
+</li>
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary mr-3 mt-0.5 shrink-0" style="font-variation-settings: 'FILL' 1;">
+                            check_circle
+                        </span>
+<span class="font-body-sm text-body-sm text-on-surface">We only read/write your SpendWise sheet</span>
+</li>
+<li class="flex items-start">
+<span class="material-symbols-outlined text-primary mr-3 mt-0.5 shrink-0" style="font-variation-settings: 'FILL' 1;">
+                            check_circle
+                        </span>
+<span class="font-body-sm text-body-sm text-on-surface">You can open it in Google Sheets anytime</span>
+</li>
+</ul>
+</div>
+<!-- Spacer to push bottom actions down if screen is tall -->
+<div class="flex-grow min-h-[32px]"></div>
+</main>
+<!-- Bottom Actions Area -->
+<footer class="p-container-margin pt-stack-sm pb-[calc(20px+env(safe-area-inset-bottom))] bg-surface-container-lowest shrink-0">
+<button class="w-full h-14 bg-primary text-on-primary font-title-lg text-title-lg rounded-full flex items-center justify-center shadow-md active:scale-[0.98] transition-transform">
+                Continue
+            </button>
+<div class="mt-stack-md text-center">
+<a class="font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider" href="#">
+                    How does this work?
+                </a>
+</div>
+</footer>
+</div>
+</body></html>

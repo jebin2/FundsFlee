@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Onboarding - Step 2</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "surface-bright": "#fcf8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#b8c4ff",
+                        "on-secondary-fixed": "#07006c",
+                        "tertiary-fixed": "#dde1ff",
+                        "on-tertiary-container": "#9dacf3",
+                        "on-surface-variant": "#464553",
+                        "on-secondary-container": "#fffbff",
+                        "primary": "#1f108e",
+                        "on-error-container": "#93000a",
+                        "primary-container": "#3730a3",
+                        "surface-container-high": "#eae6f1",
+                        "secondary-container": "#6063ee",
+                        "inverse-surface": "#303037",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#544fc0",
+                        "outline-variant": "#c8c4d5",
+                        "error": "#ba1a1a",
+                        "outline": "#777584",
+                        "background": "#fcf8ff",
+                        "tertiary": "#162766",
+                        "surface-dim": "#dcd8e3",
+                        "on-primary-fixed": "#0f0069",
+                        "tertiary-container": "#2f3e7e",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#a9a7ff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-fixed-variant": "#3b35a7",
+                        "secondary": "#4648d4",
+                        "surface-container": "#f0ecf6",
+                        "on-tertiary-fixed-variant": "#334282",
+                        "on-surface": "#1b1b22",
+                        "surface-variant": "#e4e1eb",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e4e1eb",
+                        "secondary-fixed": "#e1e0ff",
+                        "on-background": "#1b1b22",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-fixed": "#001354",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f6f2fc",
+                        "surface": "#fcf8ff",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-fixed-dim": "#c0c1ff",
+                        "on-secondary-fixed-variant": "#2f2ebe",
+                        "inverse-on-surface": "#f3eff9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter-md": "16px",
+                        "base": "8px",
+                        "stack-md": "16px",
+                        "stack-lg": "24px",
+                        "container-margin": "20px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Inter"],
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "title-lg": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased">
+<main class="flex-1 w-full max-w-[390px] mx-auto flex flex-col relative px-container-margin pt-12 pb-8">
+<div class="flex justify-center items-center gap-2 mb-12">
+<div class="w-2 h-2 rounded-full bg-surface-variant"></div>
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<div class="w-2 h-2 rounded-full bg-surface-variant"></div>
+<div class="w-2 h-2 rounded-full bg-surface-variant"></div>
+</div>
+<div class="flex flex-col items-center text-center mt-4">
+<div class="w-24 h-24 bg-tertiary-container rounded-full flex items-center justify-center mb-stack-lg shadow-[0_8px_20px_rgba(55,48,163,0.08)]">
+<span class="material-symbols-outlined text-[48px] text-on-tertiary-container" style="font-variation-settings: 'FILL' 1;">task</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface mb-stack-lg tracking-tight">Your sheet is ready!</h1>
+<div class="w-full bg-surface-container-lowest rounded-xl p-stack-md shadow-[0_4px_12px_rgba(55,48,163,0.04)] border border-outline-variant/30 flex flex-col gap-4 text-left">
+<div class="flex items-start gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-outline text-[24px]" style="font-variation-settings: 'FILL' 1;">description</span>
+</div>
+<div class="flex flex-col">
+<span class="font-title-lg text-title-lg text-on-surface">SpendingTracker — Jebin</span>
+<span class="font-body-sm text-body-sm text-outline mt-1">Created just now</span>
+</div>
+</div>
+<div class="w-full h-[1px] bg-surface-variant"></div>
+<button class="flex items-center gap-1 font-label-md text-label-md text-primary uppercase hover:opacity-80 transition-opacity w-fit py-1">
+                    Open in Google Sheets
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-stack-lg px-2 text-center">
+                This sheet has 3 tabs: transactions, categories, and settings. Don't delete it — the app reads from here.
+            </p>
+</div>
+<div class="mt-auto pt-8">
+<button class="w-full bg-primary text-on-primary font-label-md text-label-md uppercase tracking-wider py-4 rounded-full flex items-center justify-center shadow-[0_8px_20px_rgba(31,16,142,0.15)] active:scale-[0.98] transition-transform duration-200">
+                Looks good, continue
+            </button>
+</div>
+</main>
+</body></html>

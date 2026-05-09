@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Transactions - SpendingTracker</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "surface-bright": "#fcf8ff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed-dim": "#b8c4ff",
+                        "on-secondary-fixed": "#07006c",
+                        "tertiary-fixed": "#dde1ff",
+                        "on-tertiary-container": "#9dacf3",
+                        "on-surface-variant": "#464553",
+                        "on-secondary-container": "#fffbff",
+                        "primary": "#1f108e",
+                        "on-error-container": "#93000a",
+                        "primary-container": "#3730a3",
+                        "surface-container-high": "#eae6f1",
+                        "secondary-container": "#6063ee",
+                        "inverse-surface": "#303037",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#544fc0",
+                        "outline-variant": "#c8c4d5",
+                        "error": "#ba1a1a",
+                        "outline": "#777584",
+                        "background": "#fcf8ff",
+                        "tertiary": "#162766",
+                        "surface-dim": "#dcd8e3",
+                        "on-primary-fixed": "#0f0069",
+                        "tertiary-container": "#2f3e7e",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#a9a7ff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-fixed-variant": "#3b35a7",
+                        "secondary": "#4648d4",
+                        "surface-container": "#f0ecf6",
+                        "on-tertiary-fixed-variant": "#334282",
+                        "on-surface": "#1b1b22",
+                        "surface-variant": "#e4e1eb",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e4e1eb",
+                        "secondary-fixed": "#e1e0ff",
+                        "on-background": "#1b1b22",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-fixed": "#001354",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f6f2fc",
+                        "surface": "#fcf8ff",
+                        "primary-fixed": "#e2dfff",
+                        "secondary-fixed-dim": "#c0c1ff",
+                        "on-secondary-fixed-variant": "#2f2ebe",
+                        "inverse-on-surface": "#f3eff9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter-md": "16px",
+                        "base": "8px",
+                        "stack-md": "16px",
+                        "stack-lg": "24px",
+                        "container-margin": "20px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Inter"],
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "title-lg": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen pb-24 max-w-[390px] mx-auto relative shadow-sm border-x border-surface-variant overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-[15px] border-b border-slate-100 shadow-sm flex justify-between items-center px-5 h-16 max-w-[390px] mx-auto">
+<div class="w-8"></div> <!-- Spacer for centering -->
+<h1 class="font-sans text-lg font-semibold tracking-tight text-slate-900">Transactions</h1>
+<button class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-full active:scale-95 duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">tune</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[88px] px-container-margin flex flex-col gap-stack-lg">
+<!-- Search & Filter Section -->
+<div class="flex flex-col gap-stack-sm">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline" style="font-variation-settings: 'FILL' 0;">search</span>
+<input class="w-full h-12 pl-10 pr-4 bg-surface-container-lowest border border-outline-variant rounded-full text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-[0_4px_12px_rgba(31,16,142,0.04)]" placeholder="Search merchant, category..." type="text"/>
+</div>
+<!-- Active Filter Chips -->
+<div class="flex overflow-x-auto gap-2 pb-2 hide-scrollbar -mx-container-margin px-container-margin">
+<button class="flex items-center gap-1 bg-primary-container text-on-primary-container px-3 py-1.5 rounded-full whitespace-nowrap">
+<span class="font-label-md text-label-md">This Month</span>
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 0;">close</span>
+</button>
+<button class="flex items-center gap-1 bg-primary-container text-on-primary-container px-3 py-1.5 rounded-full whitespace-nowrap">
+<span class="font-label-md text-label-md">Food &amp; Dining</span>
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 0;">close</span>
+</button>
+<button class="flex items-center gap-1 bg-surface-container-lowest border border-outline-variant text-on-surface px-3 py-1.5 rounded-full whitespace-nowrap">
+<span class="font-label-md text-label-md">+ Add filter</span>
+</button>
+</div>
+</div>
+<!-- Transactions List -->
+<div class="flex flex-col gap-stack-lg">
+<!-- Date Group: Today -->
+<section class="flex flex-col gap-stack-sm">
+<div class="flex justify-between items-center mb-1">
+<h2 class="font-title-lg text-title-lg text-on-surface">Today</h2>
+<span class="font-body-sm text-body-sm text-outline">— ₹630</span>
+</div>
+<!-- Flagged Duplicate Card -->
+<div class="flex flex-col bg-surface-container-lowest rounded-xl shadow-[0_4px_12px_rgba(31,16,142,0.04)] border-l-4 border-l-error">
+<div class="p-stack-md flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-xl">
+                                🍔
+                            </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface flex items-center gap-1">
+                                    Swiggy
+                                </span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="px-2 py-0.5 bg-secondary-container/20 text-secondary-container rounded-full font-label-md text-[10px]">Food Delivery</span>
+<span class="font-body-sm text-[12px] text-outline">1:22 PM</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1">
+<span class="font-title-lg text-title-lg text-on-surface">₹450</span>
+<span class="material-symbols-outlined text-error text-sm" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+</div>
+<!-- Inline Warning Strip -->
+<div class="bg-error-container/50 px-4 py-2 flex flex-col gap-2 border-t border-error-container">
+<span class="font-body-sm text-body-sm text-on-error-container flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">warning</span>
+                            Possible duplicate of Swiggy Apr 26 ₹450
+                        </span>
+<div class="flex gap-4">
+<button class="font-label-md text-label-md text-primary hover:underline">Keep both</button>
+<button class="font-label-md text-label-md text-error hover:underline">Remove this</button>
+</div>
+</div>
+</div>
+<!-- Normal Card -->
+<div class="p-stack-md bg-surface-container-lowest rounded-xl shadow-[0_4px_12px_rgba(31,16,142,0.04)] flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-xl">
+                            ☕
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Blue Tokai</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="px-2 py-0.5 bg-secondary-container/20 text-secondary-container rounded-full font-label-md text-[10px]">Cafes</span>
+<span class="font-body-sm text-[12px] text-outline">11:05 AM</span>
+</div>
+</div>
+</div>
+<span class="font-title-lg text-title-lg text-on-surface">₹180</span>
+</div>
+</section>
+<!-- Date Group: Yesterday -->
+<section class="flex flex-col gap-stack-sm">
+<div class="flex justify-between items-center mb-1">
+<h2 class="font-title-lg text-title-lg text-on-surface">Yesterday</h2>
+<span class="font-body-sm text-body-sm text-outline">— ₹1,479</span>
+</div>
+<div class="p-stack-md bg-surface-container-lowest rounded-xl shadow-[0_4px_12px_rgba(31,16,142,0.04)] flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-xl">
+                            🛒
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Big Basket</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="px-2 py-0.5 bg-tertiary-container/20 text-tertiary-container rounded-full font-label-md text-[10px]">Groceries</span>
+<span class="font-body-sm text-[12px] text-outline">6:30 PM</span>
+</div>
+</div>
+</div>
+<span class="font-title-lg text-title-lg text-on-surface">₹1,299</span>
+</div>
+<div class="p-stack-md bg-surface-container-lowest rounded-xl shadow-[0_4px_12px_rgba(31,16,142,0.04)] flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-xl">
+                            🚗
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Ola</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="px-2 py-0.5 bg-[#fcd34d]/30 text-[#b45309] rounded-full font-label-md text-[10px]">Transport</span>
+<span class="font-body-sm text-[12px] text-outline">9:15 AM</span>
+</div>
+</div>
+</div>
+<span class="font-title-lg text-title-lg text-on-surface">₹180</span>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 right-0 w-full max-w-[390px] mx-auto flex justify-around items-center h-20 pb-safe px-2 bg-white/90 backdrop-blur-[15px] border-t border-slate-100 shadow-[0_-4px_12px_rgba(55,48,163,0.04)] rounded-t-3xl z-50">
+<a class="flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">home</span>
+<span class="text-[10px] font-medium font-sans uppercase tracking-wider">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-indigo-700 after:content-[''] after:w-1 after:h-1 after:bg-indigo-700 after:rounded-full after:mt-1 hover:text-indigo-600 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">receipt_long</span>
+<span class="text-[10px] font-medium font-sans uppercase tracking-wider">History</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">add_circle</span>
+<span class="text-[10px] font-medium font-sans uppercase tracking-wider">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">insights</span>
+<span class="text-[10px] font-medium font-sans uppercase tracking-wider">Insights</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span class="text-[10px] font-medium font-sans uppercase tracking-wider">Settings</span>
+</a>
+</nav>
+<style>
+        /* Hide scrollbar for filter chips */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* Safe area padding for newer iPhones */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            .pb-safe {
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+        }
+    </style>
+</body></html>

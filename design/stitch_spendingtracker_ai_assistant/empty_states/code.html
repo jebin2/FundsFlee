@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Empty States - SpendingTracker</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"outline":"#777584","outline-variant":"#c8c4d5","primary":"#1f108e","surface-container-lowest":"#ffffff","on-primary":"#ffffff","primary-container":"#3730a3","surface":"#fcf8ff","on-surface-variant":"#464553","surface-container":"#f0ecf6","background":"#fcf8ff","on-surface":"#1b1b22","surface-variant":"#e4e1eb","primary-fixed":"#e2dfff"},borderRadius:{"DEFAULT":"0.25rem","xl":"0.75rem","full":"9999px","3xl":"1.5rem"},spacing:{"container-margin":"20px","stack-md":"16px","safe":"env(safe-area-inset-bottom)"},fontFamily:{"title-lg":["Inter"],"body-md":["Inter"],"body-sm":["Inter"],"label-md":["Inter"]},fontSize:{"title-lg":["20px",{"lineHeight":"28px","fontWeight":"600"}],"body-md":["16px",{"lineHeight":"24px","fontWeight":"400"}],"body-sm":["14px",{"lineHeight":"20px","fontWeight":"400"}],"label-md":["12px",{"lineHeight":"16px","fontWeight":"500"}]}}}}</script>
+<style>body{min-height:max(884px,100dvh)}</style>
+</head>
+<body class="bg-background text-on-background font-body-md pb-24">
+
+<!-- Web Header -->
+<header class="bg-white/90 backdrop-blur-md fixed top-0 left-0 w-full flex justify-between items-center px-8 h-16 border-b border-outline-variant/30 shadow-sm z-40 hidden md:flex">
+  <span class="text-xl font-bold text-primary">SpendingTracker</span>
+  <nav class="flex items-center gap-1 text-sm font-medium text-on-surface-variant">
+    <a href="#" class="hover:text-primary px-3 py-2 rounded-lg">Home</a>
+    <a href="#" class="hover:text-primary px-3 py-2 rounded-lg">Transactions</a>
+    <a href="#" class="hover:text-primary px-3 py-2 rounded-lg">Analytics</a>
+    <a href="#" class="hover:text-primary px-3 py-2 rounded-lg">Settings</a>
+  </nav>
+  <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuC04pNMCkWicgLAImqTncrJr8gHFY6NPCRerOjcnGOs4ttPK9hs4JTWieW3YWfDInKW_IP5W5eL5WIWdNozyIBJ2Xh5g--V2U0aJ7x5e5lQh369CYAys7DPVkp_h7vMOn8i8V7RtiRbeaPzHdinRQdLc13J1-QlMxC3gP4MUQCO1dpPc7KOoBBOpjVwZ5jz5YV_5hF9d1wTvbewAsSHAbfdhbbczzYYf1hTqxLwk-FYU98vG0lRgU-gJvjaLrNiT9kZoE1TId3Hfd0" alt="User" class="w-8 h-8 rounded-full object-cover border border-outline-variant"/>
+</header>
+
+<main class="md:pt-24 max-w-2xl mx-auto px-container-margin md:px-5 flex flex-col">
+
+  <!-- Tab switcher -->
+  <div class="flex gap-2 pt-6 md:pt-4 pb-6 border-b border-outline-variant/30">
+    <button onclick="show('transactions')" id="tab-transactions" class="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-on-primary transition-all">Empty Transactions</button>
+    <button onclick="show('analysis')" id="tab-analysis" class="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-surface-container text-on-surface-variant transition-all">Empty Analysis</button>
+  </div>
+
+  <!-- Empty Transactions State -->
+  <div id="state-transactions" class="flex flex-col items-center justify-center text-center py-16 gap-6">
+    <div class="w-32 h-32 rounded-3xl bg-primary-fixed flex items-center justify-center relative">
+      <span class="text-6xl">🧾</span>
+      <div class="absolute -top-2 -right-2 w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-primary text-[18px]" style="font-variation-settings:'FILL' 1">auto_awesome</span>
+      </div>
+    </div>
+    <div>
+      <h2 class="font-bold text-on-background mb-2" style="font-size:22px">No transactions yet</h2>
+      <p class="font-body-sm text-on-surface-variant max-w-xs">Add your first entry manually, snap a receipt, or paste an SMS notification.</p>
+    </div>
+    <div class="flex flex-col gap-3 w-full max-w-xs">
+      <button class="w-full bg-primary text-on-primary font-medium py-4 rounded-2xl flex items-center justify-center gap-2 shadow-[0_8px_20px_rgba(31,16,142,0.2)] hover:bg-primary-container transition-colors">
+        <span class="material-symbols-outlined">edit_note</span> Add manually
+      </button>
+      <button class="w-full border border-primary text-primary font-medium py-3.5 rounded-2xl flex items-center justify-center gap-2 hover:bg-primary-fixed transition-colors">
+        <span class="material-symbols-outlined">content_paste</span> Paste SMS or receipt
+      </button>
+    </div>
+  </div>
+
+  <!-- Empty Analysis State -->
+  <div id="state-analysis" class="hidden flex-col items-center justify-center text-center py-16 gap-6">
+    <div class="w-32 h-32 rounded-3xl bg-primary-fixed flex items-center justify-center relative">
+      <span class="text-6xl">📊</span>
+      <div class="absolute -top-2 -right-2 w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-primary text-[18px]" style="font-variation-settings:'FILL' 1">psychology</span>
+      </div>
+    </div>
+    <div>
+      <h2 class="font-bold text-on-background mb-2" style="font-size:22px">No analysis yet</h2>
+      <p class="font-body-sm text-on-surface-variant max-w-xs">The AI needs at least a few transactions to generate insights. Add some spending first.</p>
+    </div>
+    <div class="flex flex-col gap-3 w-full max-w-xs">
+      <button class="w-full bg-primary text-on-primary font-medium py-4 rounded-2xl flex items-center justify-center gap-2 shadow-[0_8px_20px_rgba(31,16,142,0.2)] hover:bg-primary-container transition-colors">
+        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">auto_awesome</span> Generate Analysis
+      </button>
+      <p class="font-label-md text-outline">Takes ~10 seconds</p>
+    </div>
+  </div>
+</main>
+
+<!-- Bottom Nav -->
+<nav class="bg-white/90 backdrop-blur-[15px] border-t border-outline-variant/30 fixed bottom-0 left-0 w-full flex justify-around items-center h-20 px-4 pb-safe z-50 rounded-t-3xl md:hidden">
+  <a href="#" class="flex flex-col items-center text-outline hover:text-primary"><span class="material-symbols-outlined text-2xl mb-1">home</span><span class="text-[10px] font-medium uppercase">Home</span></a>
+  <a href="#" class="flex flex-col items-center text-outline hover:text-primary"><span class="material-symbols-outlined text-2xl mb-1">receipt_long</span><span class="text-[10px] font-medium uppercase">Transactions</span></a>
+  <a href="#" class="flex flex-col items-center text-outline hover:text-primary"><span class="material-symbols-outlined text-2xl mb-1">add_circle</span><span class="text-[10px] font-medium uppercase">Add</span></a>
+  <a href="#" class="flex flex-col items-center text-outline hover:text-primary"><span class="material-symbols-outlined text-2xl mb-1">analytics</span><span class="text-[10px] font-medium uppercase">Analytics</span></a>
+  <a href="#" class="flex flex-col items-center text-outline hover:text-primary"><span class="material-symbols-outlined text-2xl mb-1">person</span><span class="text-[10px] font-medium uppercase">Profile</span></a>
+</nav>
+
+<script>
+function show(state) {
+  document.getElementById('state-transactions').classList.add('hidden');
+  document.getElementById('state-transactions').classList.remove('flex');
+  document.getElementById('state-analysis').classList.add('hidden');
+  document.getElementById('state-analysis').classList.remove('flex');
+  document.getElementById('tab-transactions').className = 'flex-1 py-2.5 rounded-xl text-sm font-semibold bg-surface-container text-on-surface-variant transition-all';
+  document.getElementById('tab-analysis').className = 'flex-1 py-2.5 rounded-xl text-sm font-semibold bg-surface-container text-on-surface-variant transition-all';
+  document.getElementById('state-' + state).classList.remove('hidden');
+  document.getElementById('state-' + state).classList.add('flex');
+  document.getElementById('tab-' + state).className = 'flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-on-primary transition-all';
+}
+</script>
+</body></html>

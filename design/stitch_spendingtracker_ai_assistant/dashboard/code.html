@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard - Personal AI Spending Tracker</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline": "#777584",
+                        "surface-dim": "#dcd8e3",
+                        "secondary-fixed": "#e1e0ff",
+                        "on-secondary-fixed-variant": "#2f2ebe",
+                        "surface-container-high": "#eae6f1",
+                        "surface-container-low": "#f6f2fc",
+                        "inverse-surface": "#303037",
+                        "surface-tint": "#544fc0",
+                        "on-background": "#1b1b22",
+                        "on-secondary-fixed": "#07006c",
+                        "error": "#ba1a1a",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#0f0069",
+                        "inverse-primary": "#c3c0ff",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f3eff9",
+                        "outline-variant": "#c8c4d5",
+                        "tertiary-fixed-dim": "#b8c4ff",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-primary-container": "#a9a7ff",
+                        "primary": "#1f108e",
+                        "secondary-container": "#6063ee",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "tertiary": "#162766",
+                        "secondary-fixed-dim": "#c0c1ff",
+                        "on-tertiary-container": "#9dacf3",
+                        "on-primary-fixed-variant": "#3b35a7",
+                        "surface-container-highest": "#e4e1eb",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#3730a3",
+                        "secondary": "#4648d4",
+                        "surface": "#fcf8ff",
+                        "on-surface-variant": "#464553",
+                        "tertiary-container": "#2f3e7e",
+                        "surface-container": "#f0ecf6",
+                        "background": "#fcf8ff",
+                        "on-secondary-container": "#fffbff",
+                        "on-surface": "#1b1b22",
+                        "on-tertiary-fixed": "#001354",
+                        "surface-variant": "#e4e1eb",
+                        "surface-bright": "#fcf8ff",
+                        "on-tertiary-fixed-variant": "#334282",
+                        "primary-fixed": "#e2dfff",
+                        "tertiary-fixed": "#dde1ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "3xl": "1.5rem"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "container-margin": "20px",
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "gutter-md": "16px",
+                        "base": "8px",
+                        "safe": "env(safe-area-inset-bottom)"
+                    },
+                    "fontFamily": {
+                        "title-lg": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "title-lg": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen font-body-md relative pb-24 selection:bg-primary selection:text-on-primary">
+<!-- Top Navigation Container -->
+<header class="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md fixed top-0 left-0 w-full flex justify-between items-center px-5 h-16 border-b border-slate-100 dark:border-slate-800 shadow-sm z-40 hidden md:flex">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold text-indigo-800 dark:text-indigo-300">SpendWise</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 text-indigo-700 dark:text-indigo-400 font-bold font-sans text-lg tracking-tight">
+<a class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg opacity-80 scale-95 transition-all" href="#">Home</a>
+<a class="text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Analytics</a>
+<a class="text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Add</a>
+<a class="text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Budget</a>
+<a class="text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors px-3 py-2 rounded-lg" href="#">Profile</a>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined text-indigo-700 dark:text-indigo-400 cursor-pointer">notifications</span>
+<span class="absolute top-0 right-0 bg-error text-on-error font-label-md text-[10px] w-4 h-4 flex items-center justify-center rounded-full -mt-1 -mr-1">2</span>
+</div>
+<img alt="User profile photo" class="w-8 h-8 rounded-full object-cover border border-outline-variant" data-alt="Portrait of a smiling young man in a light grey t-shirt against a clean white background, soft studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSNT8dEOeTbBMzmaMeclTQGI9ghFlrtfCZ_Oc9NL2fScrDfq0uhr8iupjswnBFQ1h38g1_6n9xWIEOq_IKUFKx4Zfm0yM-XJVD0lfITOpZzeOhqsNtX9XGK5-JlT9IssulRZJ8AAoDq7FLEr63hitl20tEXYElVJNSTKGXHeQY2CPy2ioe3kjPrb1Nbpye06ROKk6oKCtP0iuhft612g54_EMJdIYCqlm2hk5g10-1aC2Mi5dNE0JuAr05mgX058ryn5kVXH6PGCY"/>
+</div>
+</header>
+<!-- Mobile Header -->
+<div class="md:hidden pt-8 px-container-margin pb-stack-md flex justify-between items-center sticky top-0 bg-background/95 backdrop-blur z-30">
+<h1 class="font-headline-md text-headline-md text-on-background">Hi, Jebin <span class="text-2xl">👋</span></h1>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer text-2xl">notifications</span>
+<span class="absolute top-0 right-0 bg-error text-on-error font-label-md text-[10px] w-4 h-4 flex items-center justify-center rounded-full -mt-1 -mr-1 border border-background">2</span>
+</div>
+<img alt="User avatar" class="w-10 h-10 rounded-full object-cover shadow-sm border border-surface-variant" data-alt="Portrait of a smiling young man in a light grey t-shirt against a clean white background, soft studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC04pNMCkWicgLAImqTncrJr8gHFY6NPCRerOjcnGOs4ttPK9hs4JTWieW3YWfDInKW_IP5W5eL5WIWdNozyIBJ2Xh5g--V2U0aJ7x5e5lQh369CYAys7DPVkp_h7vMOn8i8V7RtiRbeaPzHdinRQdLc13J1-QlMxC3gP4MUQCO1dpPc7KOoBBOpjVwZ5jz5YV_5hF9d1wTvbewAsSHAbfdhbbczzYYf1hTqxLwk-FYU98vG0lRgU-gJvjaLrNiT9kZoE1TId3Hfd0"/>
+</div>
+</div>
+<main class="md:pt-24 max-w-7xl mx-auto px-container-margin md:px-5 flex flex-col gap-stack-lg">
+<!-- Period Toggle Chips -->
+<div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+<button class="px-4 py-2 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md whitespace-nowrap bg-surface-container-lowest">Today</button>
+<button class="px-4 py-2 rounded-full border border-outline-variant text-on-surface-variant font-label-md text-label-md whitespace-nowrap bg-surface-container-lowest">This Week</button>
+<button class="px-4 py-2 rounded-full bg-primary text-on-primary font-label-md text-label-md whitespace-nowrap border border-primary shadow-sm">This Month</button>
+</div>
+<!-- Summary Cards (Horizontal Scroll) -->
+<div class="flex gap-4 overflow-x-auto hide-scrollbar pb-4 -mx-container-margin px-container-margin snap-x">
+<!-- Card 1: Total Spent -->
+<div class="min-w-[280px] bg-primary text-on-primary rounded-3xl p-stack-md flex flex-col justify-between shadow-[0_8px_20px_rgba(31,16,142,0.15)] snap-start">
+<div class="flex justify-between items-start mb-6">
+<span class="font-body-md text-primary-fixed-dim">Total Spent</span>
+<span class="material-symbols-outlined text-primary-fixed-dim opacity-70">account_balance_wallet</span>
+</div>
+<div>
+<div class="font-display-lg text-display-lg mb-1">₹14,200</div>
+<div class="flex items-center gap-1 font-label-md text-label-md text-[#ffd54f]">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+<span>22% vs last month</span>
+</div>
+</div>
+</div>
+<!-- Card 2: Transactions -->
+<div class="min-w-[200px] bg-surface-container-lowest rounded-3xl p-stack-md flex flex-col justify-between shadow-[0_4px_12px_rgba(31,16,142,0.04)] border border-surface-variant snap-start">
+<div class="flex justify-between items-start mb-6">
+<span class="font-body-md text-on-surface-variant">Transactions</span>
+<span class="material-symbols-outlined text-primary opacity-70">receipt_long</span>
+</div>
+<div>
+<div class="font-display-lg text-display-lg text-primary mb-1">67</div>
+<div class="font-label-md text-label-md text-outline">This month</div>
+</div>
+</div>
+<!-- Card 3: Top Category -->
+<div class="min-w-[200px] bg-surface-container-lowest rounded-3xl p-stack-md flex flex-col justify-between shadow-[0_4px_12px_rgba(31,16,142,0.04)] border border-surface-variant snap-start">
+<div class="flex justify-between items-start mb-6">
+<span class="font-body-md text-on-surface-variant">Top Category</span>
+<span class="material-symbols-outlined text-primary opacity-70">pie_chart</span>
+</div>
+<div>
+<div class="font-title-lg text-title-lg text-primary mb-1 truncate flex items-center gap-2">🍕 Food &amp; Dining</div>
+<div class="font-body-md text-body-md text-outline font-semibold">₹5,800</div>
+</div>
+</div>
+</div>
+<!-- AI Nudge Card -->
+<div class="bg-surface-container-lowest rounded-2xl p-stack-md border-l-4 border-primary shadow-[0_4px_12px_rgba(31,16,142,0.04)] border-y border-r border-y-surface-variant border-r-surface-variant flex gap-3 items-start relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -mt-10 -mr-10 pointer-events-none"></div>
+<div class="mt-1 flex-shrink-0">
+<span class="material-symbols-outlined text-primary text-2xl" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<div class="flex-1">
+<div class="inline-block bg-secondary-fixed text-on-secondary-fixed font-label-md text-[10px] px-2 py-0.5 rounded-full mb-2 uppercase font-bold tracking-wider">AI Insight</div>
+<p class="font-body-md text-body-md text-on-surface mb-2 leading-relaxed">You spent <span class="font-semibold text-primary">40% more</span> on food delivery this week vs last week.</p>
+<a class="font-label-md text-label-md text-primary font-semibold flex items-center gap-1 hover:text-secondary transition-colors" href="#">
+                    See full analysis
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- Duplicate Alert Banner -->
+<div class="bg-[#fff8e1] rounded-2xl p-4 flex items-center justify-between border border-[#ffecb3] shadow-sm">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#f57c00]">warning</span>
+<span class="font-body-sm text-body-sm text-[#e65100] font-medium">2 possible duplicate entries found</span>
+</div>
+<a class="font-label-md text-label-md text-[#e65100] font-bold flex items-center gap-1" href="#">
+                Review <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</a>
+</div>
+<!-- Recent Transactions -->
+<section class="flex flex-col gap-stack-md pb-6">
+<div class="flex justify-between items-end">
+<h2 class="font-title-lg text-title-lg text-on-background">Recent Transactions</h2>
+<a class="font-body-sm text-body-sm text-primary font-medium flex items-center gap-1 hover:underline" href="#">
+                    See all <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+<div class="flex flex-col gap-3 bg-surface-container-lowest rounded-3xl p-2 shadow-[0_4px_12px_rgba(31,16,142,0.02)] border border-surface-variant">
+<!-- Row 1 -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-container rounded-xl transition-colors cursor-pointer group">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-[#ffebee] flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-105 transition-transform">
+                            🍔
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Swiggy</span>
+<span class="font-body-sm text-body-sm text-outline flex items-center gap-2 mt-0.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#4caf50]"></span> Food Delivery
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end text-right">
+<span class="font-body-md text-body-md font-semibold text-on-background">₹450</span>
+<span class="font-label-md text-label-md text-outline mt-1">Today, 1:22 PM</span>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-container rounded-xl transition-colors cursor-pointer group border-t border-surface-variant/50">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-[#e3f2fd] flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-105 transition-transform">
+                            📦
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Amazon</span>
+<span class="font-body-sm text-body-sm text-outline flex items-center gap-2 mt-0.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#2196f3]"></span> Shopping
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end text-right">
+<span class="font-body-md text-body-md font-semibold text-on-background">₹1,299</span>
+<span class="font-label-md text-label-md text-outline mt-1">Yesterday</span>
+</div>
+</div>
+<!-- Row 3 (Duplicate Warning) -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-container rounded-xl transition-colors cursor-pointer group border-t border-surface-variant/50 bg-[#fff3e0]/30">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-[#fff3e0] flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-105 transition-transform relative">
+                            🚕
+                            <div class="absolute -top-1 -right-1 bg-error rounded-full w-4 h-4 flex items-center justify-center text-[10px] text-on-error border border-white">
+<span class="material-symbols-outlined text-[10px]">priority_high</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Ola</span>
+<span class="font-body-sm text-body-sm text-outline flex items-center gap-2 mt-0.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#ff9800]"></span> Transport
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end text-right">
+<span class="font-body-md text-body-md font-semibold text-on-background">₹180</span>
+<span class="font-label-md text-label-md text-error flex items-center gap-1 mt-1">
+<span class="material-symbols-outlined text-[12px]">warning</span> Yesterday
+                        </span>
+</div>
+</div>
+<!-- Row 4 -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-container rounded-xl transition-colors cursor-pointer group border-t border-surface-variant/50">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-[#e8f5e9] flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-105 transition-transform">
+                            🛒
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Big Basket</span>
+<span class="font-body-sm text-body-sm text-outline flex items-center gap-2 mt-0.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#4caf50]"></span> Groceries
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end text-right">
+<span class="font-body-md text-body-md font-semibold text-on-background">₹2,340</span>
+<span class="font-label-md text-label-md text-outline mt-1">Mon, Apr 21</span>
+</div>
+</div>
+<!-- Row 5 -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-container rounded-xl transition-colors cursor-pointer group border-t border-surface-variant/50">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-[#f3e5f5] flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-105 transition-transform">
+                            🎬
+                        </div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Netflix</span>
+<span class="font-body-sm text-body-sm text-outline flex items-center gap-2 mt-0.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#9c27b0]"></span> Subscription
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end text-right">
+<span class="font-body-md text-body-md font-semibold text-on-background">₹649</span>
+<span class="font-label-md text-label-md text-outline mt-1">Mon, Apr 21</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-28 right-5 w-14 h-14 bg-primary text-on-primary rounded-2xl flex items-center justify-center shadow-[0_8px_20px_rgba(31,16,142,0.2)] hover:scale-105 hover:bg-primary-container transition-all z-40 md:hidden">
+<span class="material-symbols-outlined text-3xl">add</span>
+</button>
+<!-- Bottom Navigation Bar -->
+<nav class="bg-white/90 dark:bg-slate-900/90 backdrop-blur-[15px] border-t border-slate-100 dark:border-slate-800 shadow-[0_-4px_12px_rgba(55,48,163,0.04)] fixed bottom-0 left-0 w-full flex justify-around items-center h-20 px-4 pb-safe z-50 rounded-t-3xl md:hidden">
+<a class="flex flex-col items-center justify-center text-indigo-700 dark:text-indigo-400 after:content-[''] after:w-1 after:h-1 after:bg-indigo-700 after:rounded-full after:mt-1 hover:text-indigo-600 dark:hover:text-indigo-300 scale-110 transition-transform duration-200 ease-out group" href="#">
+<span class="material-symbols-outlined text-2xl mb-1" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="text-[10px] font-medium tracking-wide uppercase">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">analytics</span>
+<span class="text-[10px] font-medium tracking-wide uppercase">Analytics</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">add_circle</span>
+<span class="text-[10px] font-medium tracking-wide uppercase">Add</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">account_balance_wallet</span>
+<span class="text-[10px] font-medium tracking-wide uppercase">Budget</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">person</span>
+<span class="text-[10px] font-medium tracking-wide uppercase">Profile</span>
+</a>
+</nav>
+</body></html>
