@@ -16,19 +16,21 @@ export default withPWA({
   reloadOnOnline: true,
   disable: process.env.NODE_ENV === "development",
   fallbacks: {
-    // Standalone HTML — NOT a Next.js page, so the client-side router
-    // never tries to re-navigate to the original URL after hydration.
-    document: "/offline.html",
+    // Serve the pre-cached app shell ("/" HTML) for any offline navigation
+    // that isn't in the runtime cache. Next.js client router reads the real
+    // URL and renders the correct page — same pattern as CRA's index.html shell.
+    document: "/",
   },
   workboxOptions: {
     skipWaiting: true,
     clientsClaim: true,
+    // Pre-cache "/" at SW install time so it is available immediately offline,
+    // even on the very first cold open (before any runtime caching has run).
+    additionalManifestEntries: [{ url: "/", revision: null }],
     runtimeCaching: [
       {
-        // Cache all app page HTML with NetworkFirst.
-        // Online → fetches fresh, caches response.
-        // Offline → serves from cache; fallbacks.document kicks in on cache miss.
-        // Excludes /_next/ (static assets pre-cached by SW) and /api/ routes.
+        // Cache all app page HTML with NetworkFirst so visited pages are
+        // served from cache when offline. Excludes /_next/ and /api/.
         urlPattern: /^https?:\/\/[^/]+(?!\/_next)(?!\/api).*/,
         handler: "NetworkFirst",
         options: {
