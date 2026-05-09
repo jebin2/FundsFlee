@@ -20,12 +20,23 @@ export default withPWA({
     document: "/offline",
   },
   workboxOptions: {
-    // Activate new SW immediately without waiting for tabs to close
     skipWaiting: true,
     clientsClaim: true,
-    // Serve /offline for any navigation that fails (network + cache miss)
     navigateFallback: "/offline",
-    // Don't apply fallback to API routes
     navigateFallbackDenylist: [/^\/api\//],
+    runtimeCaching: [
+      {
+        // Cache all app page HTML with NetworkFirst (3s timeout → cache)
+        // Excludes: API routes, _next static files, icons, manifest
+        urlPattern: /^https?:\/\/[^/]+(\/(?!api\/|_next\/|icon|manifest)[^?]*)?(\?.*)?$/,
+        handler: "NetworkFirst",
+        options: {
+          cacheName: "app-pages",
+          networkTimeoutSeconds: 3,
+          expiration: { maxEntries: 64, maxAgeSeconds: 86400 },
+          cacheableResponse: { statuses: [200] },
+        },
+      },
+    ],
   },
 })(nextConfig);

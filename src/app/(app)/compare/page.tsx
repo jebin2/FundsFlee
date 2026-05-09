@@ -3,18 +3,30 @@
 import { useEffect, useState } from "react";
 import type { ItemPriceComparison } from "@/types";
 import { formatINR } from "@/lib/format/currency";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 export default function ComparePage() {
+  const isOnline = useOnlineStatus();
   const [comparisons, setComparisons] = useState<ItemPriceComparison[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/api/compare/items")
-      .then((r) => r.json())
-      .then((d) => setComparisons(d.comparisons ?? []))
-      .finally(() => setLoading(false));
-  }, []);
+    void (async () => {
+      if (!isOnline) { setLoading(false); return; }
+      setError(false);
+      try {
+        const r = await fetch("/api/compare/items");
+        const d = await r.json();
+        setComparisons(d.comparisons ?? []);
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [isOnline]);
 
   const filtered = comparisons.filter(
     (c) => !search || c.canonical.toLowerCase().includes(search.toLowerCase())
@@ -43,9 +55,19 @@ export default function ComparePage() {
         <div className="flex flex-col items-center py-12 gap-4">
           <div className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
             style={{ borderColor: "var(--color-primary-fixed)", borderTopColor: "var(--color-primary)" }} />
-          <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>
-            AI is matching item names…
-          </p>
+          <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>AI is matching item names…</p>
+        </div>
+      ) : !isOnline && comparisons.length === 0 ? (
+        <div className="flex flex-col items-center py-16 gap-4 text-center">
+          <span className="material-symbols-outlined" style={{ fontSize: 48, color: "var(--color-outline)" }}>wifi_off</span>
+          <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>Not available offline</p>
+          <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>Connect to load price comparisons.</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center py-16 gap-4 text-center">
+          <span className="material-symbols-outlined" style={{ fontSize: 48, color: "var(--color-outline)" }}>error</span>
+          <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>Failed to load</p>
+          <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>Could not fetch comparisons. Try again later.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center py-16 gap-4 text-center">

@@ -7,22 +7,29 @@ import { usePoller } from "@/hooks/usePoller";
 import { Spinner, GeneratingSpinner, FailedState } from "./AnalysisStates";
 import type { AsyncStatus } from "./AnalysisStates";
 import { formatINR } from "@/lib/format/currency";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 export function InsightsTab({ period }: { period: string }) {
   const { profile } = useProfile();
+  const isOnline = useOnlineStatus();
   const [status, setStatus] = useState<AsyncStatus>("loading");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [generatedAt, setGeneratedAt] = useState("");
 
   const check = useCallback(async (): Promise<AsyncStatus> => {
-    const res = await fetch(`/api/analyze?period=${period}`);
-    const data = await res.json();
-    if (data.status === "done") {
-      setAnalysis(data.analysis);
-      setGeneratedAt(data.generated_at ?? "");
+    try {
+      const res = await fetch(`/api/analyze?period=${period}`);
+      const data = await res.json();
+      if (data.status === "done") {
+        setAnalysis(data.analysis);
+        setGeneratedAt(data.generated_at ?? "");
+      }
+      setStatus(data.status);
+      return data.status;
+    } catch {
+      setStatus("not_started");
+      return "not_started";
     }
-    setStatus(data.status);
-    return data.status;
   }, [period]);
 
   useEffect(() => {
@@ -59,6 +66,14 @@ export function InsightsTab({ period }: { period: string }) {
   }
 
   if (status === "loading") return <Spinner />;
+
+  if (!isOnline && status === "not_started") return (
+    <div className="flex flex-col items-center py-16 gap-4 text-center px-4">
+      <span className="material-symbols-outlined" style={{ fontSize: 48, color: "var(--color-outline)" }}>wifi_off</span>
+      <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>Not available offline</p>
+      <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)", maxWidth: 260 }}>Connect to the internet to generate AI insights.</p>
+    </div>
+  );
 
   if (status === "not_started") return (
     <div className="flex flex-col items-center py-12 gap-6 text-center">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, Suspense } from "react";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ParsedTransaction, PaymentMethod } from "@/types";
 
@@ -110,6 +111,7 @@ function ConfirmForm({ parsed, rawText, onBack }: { parsed: ParsedTransaction; r
 function CaptureContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const isOnline = useOnlineStatus();
   const [tab, setTab] = useState<"paste" | "camera">(
     (searchParams.get("tab") as "paste" | "camera") ?? "paste"
   );
@@ -290,6 +292,17 @@ function CaptureContent() {
         </button>
         <h1 className="font-semibold" style={{ fontSize: 20 }}>Smart Capture</h1>
       </div>
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+          style={{ background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+          <span className="material-symbols-outlined" style={{ color: "var(--color-outline)", fontSize: 20 }}>wifi_off</span>
+          <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>
+            AI parsing requires internet. You can still save entries manually in Add.
+          </p>
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex gap-2">

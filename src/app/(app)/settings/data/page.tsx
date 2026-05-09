@@ -4,18 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Transaction } from "@/types";
 import { todayISO } from "@/lib/date/iso";
+import { useTransactions } from "@/hooks/useTransactions";
 
 export default function DataSettingsPage() {
   const router = useRouter();
+  const { transactions } = useTransactions();
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   async function exportCSV() {
     setExporting(true);
     try {
-      const res = await fetch("/api/transactions");
-      const data = await res.json();
-      const txs: Transaction[] = data.transactions ?? [];
+      // Use cached transactions from store — works offline
+      const txs: Transaction[] = transactions;
 
       const headers = ["Date", "Time", "Merchant", "Category", "Subcategory", "Amount", "Payment", "Source", "Notes", "Tags"];
       const rows = txs.map((t) => [

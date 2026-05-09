@@ -1,37 +1,29 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import type { CompareResult, Transaction } from "@/types";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import type { CompareResult } from "@/types";
 import { useProfile } from "@/hooks/useProfile";
 import { usePoller } from "@/hooks/usePoller";
 import { Spinner, GeneratingSpinner, FailedState } from "./AnalysisStates";
 import type { AsyncStatus } from "./AnalysisStates";
+import { useTransactions } from "@/hooks/useTransactions";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 export function CompareTab({ period }: { period: string }) {
   const { profile } = useProfile();
-  const [merchants, setMerchants] = useState<string[]>([]);
+  const isOnline = useOnlineStatus();
+  const { transactions } = useTransactions();
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<AsyncStatus>("not_started");
   const [result, setResult] = useState<CompareResult | null>(null);
   const [generatedAt, setGeneratedAt] = useState("");
-  const [txLoading, setTxLoading] = useState(true);
 
-  // Load distinct merchants
-  useEffect(() => {
-    void (async () => {
-      setTxLoading(true);
-      try {
-        const r = await fetch("/api/transactions");
-        const d = await r.json();
-        const txs: Transaction[] = (d.transactions ?? []).filter((t: Transaction) => t.amount > 0);
-        const unique = [...new Set(txs.map((t) => t.merchant).filter(Boolean))].sort();
-        setMerchants(unique);
-      } finally {
-        setTxLoading(false);
-      }
-    })();
-  }, []);
+  // Derive distinct merchants from cached store — works offline
+  const merchants = useMemo(
+    () => [...new Set(transactions.filter((t) => t.amount > 0).map((t) => t.merchant).filter(Boolean))].sort(),
+    [transactions]
+  );
 
   const checkStatus = useCallback(async (): Promise<AsyncStatus> => {
     if (selected.length < 2) return "not_started";
@@ -101,11 +93,7 @@ export function CompareTab({ period }: { period: string }) {
           />
         </div>
 
-        {txLoading ? (
-          <div className="px-4 py-6 flex items-center justify-center">
-            <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-primary-fixed)", borderTopColor: "var(--color-primary)" }} />
-          </div>
-        ) : (
+        {(
           <div className="max-h-52 overflow-y-auto px-2 py-2 flex flex-col gap-1">
             {filtered.length === 0 ? (
               <p className="px-3 py-3 text-sm" style={{ color: "var(--color-outline)" }}>No merchants found</p>
@@ -162,14 +150,21 @@ export function CompareTab({ period }: { period: string }) {
       ) : status === "failed" ? (
         <FailedState onRetry={() => runCompare(true)} />
       ) : status === "not_started" || !result ? (
-        <button
-          onClick={() => runCompare()}
-          className="w-full py-4 rounded-2xl font-semibold flex items-center justify-center gap-2"
-          style={{ background: "var(--color-primary)", color: "#fff", fontSize: 16, boxShadow: "0 8px 20px rgba(31,16,142,0.25)" }}
-        >
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>compare_arrows</span>
-          Compare with AI
-        </button>
+        !isOnline ? (
+          <div className="flex flex-col items-center py-8 gap-3 text-center">
+            <span className="material-symbols-outlined" style={{ fontSize: 40, color: "var(--color-outline)" }}>wifi_off</span>
+            <p style={{ fontSize: 15, color: "var(--color-on-surface-variant)" }}>Connect to compare with AI</p>
+          </div>
+        ) : (
+          <button
+            onClick={() => runCompare()}
+            className="w-full py-4 rounded-2xl font-semibold flex items-center justify-center gap-2"
+            style={{ background: "var(--color-primary)", color: "#fff", fontSize: 16, boxShadow: "0 8px 20px rgba(31,16,142,0.25)" }}
+          >
+            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>compare_arrows</span>
+            Compare with AI
+          </button>
+        )
       ) : (
         <CompareResultView result={result} generatedAt={generatedAt} onRefresh={() => runCompare(true)} />
       )}
