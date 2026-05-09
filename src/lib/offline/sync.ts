@@ -1,4 +1,5 @@
 import { offlineDb } from "./db";
+import { pendingCount } from "./queue";
 import type { Transaction } from "@/types";
 
 // Read from IndexedDB — instant, works offline
@@ -19,7 +20,7 @@ export async function pullTransactions(): Promise<Transaction[]> {
   if (transactions.length > 0) {
     await offlineDb.transactions.bulkPut(transactions);
     // Remove rows that no longer exist on the server
-    // Always stringify both sides to avoid type coercion mismatches
+    // Stringify both sides to prevent type coercion mismatches
     const serverIds = new Set(transactions.map((t) => String(t.id)));
     const rawLocalIds = await offlineDb.transactions.toCollection().primaryKeys();
     const localIds = (rawLocalIds as (string | number)[]).map(String);
@@ -27,9 +28,14 @@ export async function pullTransactions(): Promise<Transaction[]> {
     if (staleIds.length > 0) {
       await offlineDb.transactions.bulkDelete(staleIds);
     }
+  } else {
+    // Server returned 0 — safe to clear local only if no offline ops are pending.
+    // If queue is non-empty, offline-created transactions haven't flushed yet.
+    const queued = await pendingCount();
+    if (queued === 0) {
+      await offlineDb.transactions.clear();
+    }
   }
-  // If server returns 0 transactions, do NOT touch local cache —
-  // offline-created items may not have flushed yet.
   return transactions;
 }
 

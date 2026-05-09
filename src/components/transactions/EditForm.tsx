@@ -53,7 +53,7 @@ export function EditForm({
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({ error: "Save failed" }));
         throw new Error((data as { error?: string }).error ?? "Save failed");
       }
 

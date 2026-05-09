@@ -29,7 +29,8 @@ async function queueMutation(
 }
 
 export function useOfflineFetch() {
-  const { isOnline, setPendingCount } = useAppStore();
+  const isOnline = useAppStore((s) => s.isOnline);
+  const setPendingCount = useAppStore((s) => s.setPendingCount);
 
   async function safeFetch(
     url: string,

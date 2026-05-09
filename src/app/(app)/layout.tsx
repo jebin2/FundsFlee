@@ -122,8 +122,8 @@ function AppShell({
         - Offline mobile:  pt-8   (32px banner)
         - Offline desktop: pt-24  (64px TopNav + ~32px banner)
       */}
-      {/* Always reserve space for both TopNav + potential banner to prevent layout shift */}
-      <main style={{ paddingBottom: 96 }} className="pt-8 md:pt-24">
+      {/* Mobile: pt-8 only when banner is visible (offline/pending); desktop always pt-24 for TopNav+banner */}
+      <main style={{ paddingBottom: 96 }} className={`${!isOnline || pendingCount > 0 ? "pt-8" : ""} md:pt-24`}>
         {children}
       </main>
 

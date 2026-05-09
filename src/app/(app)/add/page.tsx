@@ -26,7 +26,7 @@ export default function AddPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const { safeFetch, isOnline } = useOfflineFetch();
+  const { safeFetch } = useOfflineFetch();
   const addTransaction = useAppStore((s) => s.addTransaction);
 
   const displayAmount = amount ? parseFloat(amount) : 0;
@@ -66,29 +66,22 @@ export default function AddPage() {
     };
 
     try {
-      if (isOnline) {
-        // Online: API first — server stamps timestamps and confirms
-        const res = await fetch("/api/transactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transaction: tx }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        const saved: Transaction = data.transaction ?? tx;
-        await saveLocalTransaction(saved);
-        addTransaction(saved);
-      } else {
-        // Offline: persist locally + update store + enqueue
-        await saveLocalTransaction(tx);
-        addTransaction(tx);
-        await safeFetch("/api/transactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transaction: tx }),
-          offlineBody: { transaction: tx },
-        });
-      }
+      // Single path — safeFetch handles both online and offline transparently.
+      // Online + success: uses server-confirmed transaction data.
+      // Online + network drops mid-request: safeFetch queues and returns synthetic response.
+      // Offline: safeFetch queues immediately and returns synthetic response.
+      const res = await safeFetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transaction: tx }),
+        offlineBody: { transaction: tx },
+      });
+      const data = await res.json().catch(() => ({ offline: true })) as { transaction?: Transaction; error?: string; offline?: boolean };
+      if (!res.ok && !data.offline) throw new Error(data.error ?? "Save failed");
+      // Use server-confirmed data when available, fall back to client-created tx
+      const saved: Transaction = data.transaction ?? tx;
+      await saveLocalTransaction(saved);
+      addTransaction(saved);
 
       router.push("/dashboard");
     } catch (err) {
