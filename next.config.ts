@@ -19,4 +19,13 @@ export default withPWA({
   fallbacks: {
     document: "/offline",
   },
+  workboxOptions: {
+    // Activate new SW immediately without waiting for tabs to close
+    skipWaiting: true,
+    clientsClaim: true,
+    // Serve /offline for any navigation that fails (network + cache miss)
+    navigateFallback: "/offline",
+    // Don't apply fallback to API routes
+    navigateFallbackDenylist: [/^\/api\//],
+  },
 })(nextConfig);

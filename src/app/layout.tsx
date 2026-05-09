@@ -6,7 +6,15 @@ export const metadata: Metadata = {
   title: "SpendingTracker",
   description: "Your AI spending agent",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "SpendingTracker" },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "SpendingTracker",
+    startupImage: "/icon-512.png",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {

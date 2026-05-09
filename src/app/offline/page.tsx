@@ -1,5 +1,8 @@
 "use client";
 
+// Must be statically exported so the service worker can pre-cache it at install time
+export const dynamic = "force-static";
+
 export default function OfflinePage() {
   return (
     <div
