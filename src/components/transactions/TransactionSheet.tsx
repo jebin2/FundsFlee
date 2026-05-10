@@ -151,7 +151,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
         onClick={onClose} />
 
       {/* Sheet — z-[70] sits above the backdrop */}
-      <div className="fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-3xl overflow-hidden"
+      <div className="fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-3xl overflow-hidden md:left-1/2 md:right-auto md:w-full md:max-w-2xl md:-translate-x-1/2"
         style={{ background: "var(--color-surface)", maxHeight: "92dvh" }}>
 
         {/* Drag handle */}
