@@ -73,7 +73,7 @@ if pm2 describe "$APP_NAME" &>/dev/null; then
   pm2 restart "$APP_NAME" --update-env
 else
   info "Starting '$APP_NAME' on port $PORT..."
-  pm2 start npm --name "$APP_NAME" -- start -- -p "$PORT"
+  pm2 start npm --name "$APP_NAME" --env production -- start -- -p "$PORT"
 fi
 pm2 save
 
