@@ -140,6 +140,16 @@ export async function runEmailImportJob(session: SheetSession, { manual = false 
     return { scanned: 0, imported: 0, skipped: 0, failed: 0 };
   }
 
+  // Concurrent-run guard: if another job set running_at within the last 5 minutes,
+  // skip — it's still in flight. If it's older than 5 min the previous process likely
+  // crashed (server restart) and didn't clear the flag, so we proceed and overwrite.
+  if (config.runningAt) {
+    const ageMs = Date.now() - new Date(config.runningAt).getTime();
+    if (ageMs < 5 * 60 * 1000) {
+      return { scanned: 0, imported: 0, skipped: 0, failed: 0 };
+    }
+  }
+
   // Mark job as running in the sheet — visible to any window/device polling status
   await setMetaValue(session.accessToken, session.sheetId, "email_import_running_at", new Date().toISOString()).catch(() => {});
 
