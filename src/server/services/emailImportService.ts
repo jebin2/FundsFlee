@@ -4,7 +4,6 @@ import { safeJsonParse } from "@/lib/safeJson";
 import type { SheetSession } from "./types";
 
 export type EmailImportConfigUpdate = {
-  enabled?: boolean;
   fromContains?: string[];
   daysBack?: number;
 };
@@ -15,9 +14,6 @@ export async function saveEmailImportConfig(
 ): Promise<void> {
   const writes: Promise<void>[] = [];
 
-  if (update.enabled !== undefined) {
-    writes.push(setMetaValue(session.accessToken, session.sheetId, "email_import_enabled", String(update.enabled)));
-  }
   if (update.fromContains !== undefined) {
     writes.push(setMetaValue(session.accessToken, session.sheetId, "email_import_from_contains", JSON.stringify(update.fromContains)));
   }
@@ -31,7 +27,6 @@ export async function saveEmailImportConfig(
 export async function getEmailImportStatus(session: SheetSession) {
   const meta = await getMetaValues(session.accessToken, session.sheetId);
   return {
-    enabled: meta.email_import_enabled === "true",
     fromContains: safeJsonParse<string[]>(meta.email_import_from_contains ?? null, []),
     daysBack: meta.email_import_days_back ? parseInt(meta.email_import_days_back) : 7,
     lastRun: meta.email_import_last_run ?? null,

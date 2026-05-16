@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 interface EmailStatus {
-  enabled: boolean;
   fromContains: string[];
   daysBack: number;
   lastRun: string | null;
@@ -12,7 +11,7 @@ interface EmailStatus {
   emailsScanned: number;
   emailsParsed: number;
   emailsSkipped: number;
-  runningAt: string | null;  // set in sheet while job is running
+  runningAt: string | null;
 }
 
 type JobState = "idle" | "running" | "done";
@@ -23,7 +22,6 @@ export default function EmailImportSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [jobState, setJobState] = useState<JobState>("idle");
   const [status, setStatus] = useState<EmailStatus | null>(null);
-  const [enabled, setEnabled] = useState(false);
   const [fromContains, setFromContains] = useState<string[]>([]);
   const [daysBack, setDaysBack] = useState(7);
   const [filterInput, setFilterInput] = useState("");
@@ -79,7 +77,6 @@ export default function EmailImportSettingsPage() {
     const data = await loadStatus();
     if (data) {
       setStatus(data);
-      setEnabled(data.enabled);
       setFromContains(data.fromContains);
       setDaysBack(data.daysBack);
 
@@ -116,16 +113,12 @@ export default function EmailImportSettingsPage() {
 
   async function save() {
     setError("");
-    if (enabled && fromContains.length === 0) {
-      setError("Add at least one 'from contains' filter before enabling.");
-      return;
-    }
     setSaving(true);
     try {
       const res = await fetch("/api/email/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, fromContains, daysBack }),
+        body: JSON.stringify({ fromContains, daysBack }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -183,25 +176,6 @@ export default function EmailImportSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-5 pt-4">
-
-          {/* Enable toggle */}
-          <div className="rounded-3xl border p-5 flex items-start gap-4"
-            style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
-            <div className="flex-1">
-              <p style={{ fontSize: 16, fontWeight: 600, color: "var(--color-on-surface)" }}>Auto-import from email</p>
-              <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)", marginTop: 4, lineHeight: 1.5 }}>
-                Emails are scanned daily and matching transactions added automatically — no confirmation needed.
-              </p>
-            </div>
-            <button
-              onClick={() => setEnabled((e) => !e)}
-              className="w-12 h-7 rounded-full flex items-center transition-colors flex-shrink-0 mt-0.5"
-              style={{ background: enabled ? "var(--color-primary)" : "var(--color-outline-variant)", padding: 3 }}
-            >
-              <div className="w-5 h-5 rounded-full bg-white transition-transform"
-                style={{ transform: enabled ? "translateX(20px)" : "translateX(0)" }} />
-            </button>
-          </div>
 
           {/* From-contains filters */}
           <div>
@@ -358,7 +332,7 @@ export default function EmailImportSettingsPage() {
           <div className="rounded-2xl p-4 flex gap-3" style={{ background: "var(--color-primary-fixed)" }}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: "var(--color-primary)", fontSize: 18 }}>info</span>
             <p style={{ fontSize: 13, color: "var(--color-primary)", lineHeight: 1.6 }}>
-              Only email text is read — images and attachments are never processed. Runs automatically once per day when you open the app.
+              Add at least one sender filter to activate auto-import. Runs once per day when you open the app. Only email text is read — images and attachments are never processed.
             </p>
           </div>
 

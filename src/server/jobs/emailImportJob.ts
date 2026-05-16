@@ -18,8 +18,7 @@ import type { Transaction } from "@/types";
 // ── Config ────────────────────────────────────────────────────────────────────
 
 export interface EmailImportConfig {
-  enabled: boolean;
-  fromContains: string[];  // substring filters — at least one required
+  fromContains: string[];  // non-empty = enabled; empty = disabled
   daysBack: number;
   region: string;
   lastRun?: string;
@@ -30,7 +29,6 @@ export interface EmailImportConfig {
 export async function readEmailImportConfig(session: SheetSession): Promise<EmailImportConfig> {
   const meta = await getMetaValues(session.accessToken, session.sheetId);
   return {
-    enabled: meta.email_import_enabled === "true",
     fromContains: safeJsonParse<string[]>(meta.email_import_from_contains ?? null, []),
     daysBack: meta.email_import_days_back ? parseInt(meta.email_import_days_back) : 7,
     region: meta.region ?? "",
@@ -138,7 +136,7 @@ export interface EmailImportResult {
 export async function runEmailImportJob(session: SheetSession): Promise<EmailImportResult> {
   const config = await readEmailImportConfig(session);
 
-  if (!config.enabled || config.fromContains.length === 0) {
+  if (config.fromContains.length === 0) {
     return { scanned: 0, imported: 0, skipped: 0, failed: 0 };
   }
 

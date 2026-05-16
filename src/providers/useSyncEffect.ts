@@ -19,12 +19,11 @@ async function triggerEmailImportIfDue(): Promise<void> {
     const res = await fetch("/api/email/config");
     if (!res.ok) return;
     const config = await res.json() as {
-      enabled: boolean;
       fromContains: string[];
       lastRun: string | null;
     };
 
-    if (!config.enabled || config.fromContains.length === 0) return;
+    if (config.fromContains.length === 0) return;
 
     const hoursSinceLastRun = config.lastRun
       ? (Date.now() - new Date(config.lastRun).getTime()) / 3_600_000

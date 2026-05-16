@@ -8,20 +8,7 @@ export const GET = withSession("GET email config", async (session) => {
 });
 
 export const PUT = withSession("PUT email config", async (session, req) => {
-  const body = await req.json() as {
-    enabled?: boolean;
-    fromContains?: string[];
-    daysBack?: number;
-  };
-
-  // Validate: if enabling, at least one fromContains entry is required
-  if (body.enabled && body.fromContains !== undefined && body.fromContains.length === 0) {
-    return NextResponse.json(
-      { error: "At least one 'from contains' filter is required to enable email import." },
-      { status: 400 }
-    );
-  }
-
+  const body = await req.json() as { fromContains?: string[]; daysBack?: number };
   await saveEmailImportConfig(session, body);
   return NextResponse.json({ ok: true });
 });
