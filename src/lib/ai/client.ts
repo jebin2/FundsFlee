@@ -151,20 +151,18 @@ function imageChain(): ImageFn[] {
   return [claude, gemini];
 }
 
-const PROVIDER_NAMES = ["claude", "gemini", "opencode"];
-
-function providerName(fn: Function): string {
-  const src = fn.toString().slice(0, 30);
-  if (src.includes("claude")) return "claude";
-  if (src.includes("gemini")) return "gemini";
-  if (src.includes("opencode")) return "opencode";
-  return "unknown";
+// Provider order matches textChain()/imageChain() rotation above
+function chainProviders(): string[] {
+  if (PRIMARY === "gemini")   return ["gemini",   "claude", "opencode"];
+  if (PRIMARY === "opencode") return ["opencode", "claude", "gemini"];
+  return                              ["claude",   "gemini", "opencode"];
 }
 
 async function runChain<T>(chain: Array<() => Promise<T>>, label: string): Promise<T> {
+  const providers = chainProviders();
   let lastErr: unknown;
   for (let i = 0; i < chain.length; i++) {
-    const provider = PROVIDER_NAMES[(i + (PRIMARY === "gemini" ? 1 : PRIMARY === "opencode" ? 2 : 0)) % 3];
+    const provider = providers[i] ?? `provider-${i}`;
     const t0 = Date.now();
     try {
       const result = await chain[i]();

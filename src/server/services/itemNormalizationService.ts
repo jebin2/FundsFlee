@@ -1,5 +1,6 @@
 import { normalizeItemNames } from "@/lib/ai/normalize-items";
 import { extractFromNotes } from "@/lib/ai/parse-notes";
+import { log } from "@/lib/logger";
 import {
   appendItemSuggestions,
   getItemSuggestions,
@@ -155,7 +156,7 @@ export async function runItemNormalization(session: SheetSession): Promise<void>
 
     await setMetaValue(session.accessToken, session.sheetId, "items_normalized_at", new Date().toISOString());
   } catch (err) {
-    console.error("Normalization background error:", err);
+    log.error("normalize", "background normalization failed", err);
   }
 }
 

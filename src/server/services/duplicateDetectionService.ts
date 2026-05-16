@@ -1,5 +1,6 @@
 import { findDuplicates } from "@/lib/ai/dedup";
 import { getMetaValues, getAllTransactions, setMetaValue, updateTransactionField } from "@/lib/sheets";
+import { log } from "@/lib/logger";
 import type { SheetSession } from "./types";
 
 const RUN_INTERVAL_MS = 60 * 60 * 1000;
@@ -58,7 +59,7 @@ export async function requestDuplicateDetection(
     await runDuplicateDetection(session);
     return { done: true };
   } catch (err) {
-    console.error("Duplicate detection error:", err);
+    log.error("dedup", "detection failed", err);
     return { error: isAiUnavailableError(err) ? "ai_unavailable" : "detection_failed" };
   }
 }
