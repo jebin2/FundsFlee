@@ -56,27 +56,33 @@ export default function ImportPage() {
   async function handleImport() {
     setStep("importing");
     const toImport = rows.filter((_, i) => selected.has(i));
-    let count = 0;
-    for (const row of toImport) {
-      const now = new Date().toISOString();
-      const tx: Transaction = {
-        id: crypto.randomUUID(),
-        date: row.date,
-        time: "00:00",
-        amount: row.amount,
-        merchant: row.merchant,
-        category: row.category,
-        payment_method: (row.payment_method as PaymentMethod) || "Other",
-        notes: row.notes ?? undefined,
-        source: "manual",
-        created_at: now,
-        updated_at: now,
-        status: "done",
-      };
-      await transactionsApi.create(tx);
-      count++;
+
+    // Batch into groups of 5 to stay within Sheets API rate limits while
+    // still being much faster than fully sequential (200 calls ≈ 100s).
+    const BATCH = 5;
+    for (let i = 0; i < toImport.length; i += BATCH) {
+      const batch = toImport.slice(i, i + BATCH);
+      await Promise.all(batch.map((row) => {
+        const now = new Date().toISOString();
+        const tx: Transaction = {
+          id: crypto.randomUUID(),
+          date: row.date,
+          time: "00:00",
+          amount: row.amount,
+          merchant: row.merchant,
+          category: row.category,
+          payment_method: (row.payment_method as PaymentMethod) || "Other",
+          notes: row.notes ?? undefined,
+          source: "manual",
+          created_at: now,
+          updated_at: now,
+          status: "done",
+        };
+        return transactionsApi.create(tx);
+      }));
     }
-    setImportedCount(count);
+
+    setImportedCount(toImport.length);
     setStep("done");
   }
 

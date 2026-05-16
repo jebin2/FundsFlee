@@ -27,6 +27,7 @@ export const EditForm = forwardRef<EditFormHandle, {
   const [paymentMethod, setPaymentMethod] = useState<import("@/types").PaymentMethod>(tx.payment_method || "Other");
   const [notes, setNotes] = useState(tx.notes || "");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const { safeFetch } = useOfflineFetch();
   const updateTransaction = useTransactionsStore((s) => s.updateTransaction);
@@ -50,6 +51,7 @@ export const EditForm = forwardRef<EditFormHandle, {
       updated_at: new Date().toISOString(),
     };
 
+    setSaveError(null);
     try {
       const res = await safeFetch(`/api/transactions/${tx.id}`, {
         method: "PATCH",
@@ -61,7 +63,8 @@ export const EditForm = forwardRef<EditFormHandle, {
       const data = await res.json().catch(() => ({ offline: true })) as { ok?: boolean; updates?: Partial<Transaction>; error?: string; offline?: boolean };
 
       if (!res.ok && !data.offline) {
-        throw new Error(data.error ?? "Save failed");
+        setSaveError(data.error ?? "Save failed — please try again.");
+        return;
       }
 
       // Use server-confirmed updates when available; fall back to local updates
@@ -69,6 +72,8 @@ export const EditForm = forwardRef<EditFormHandle, {
       updateTransaction(tx.id, confirmed);
       await patchLocalTransaction(tx.id, confirmed);
       onSaved({ ...tx, ...confirmed });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed — please try again.");
     } finally {
       setSaving(false);
     }
@@ -80,6 +85,11 @@ export const EditForm = forwardRef<EditFormHandle, {
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-on-surface-variant)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Fill in details manually
         </p>
+        {saveError && (
+          <p style={{ fontSize: 13, color: "var(--color-error)", background: "var(--color-error-container)", padding: "8px 12px", borderRadius: 10 }}>
+            {saveError}
+          </p>
+        )}
 
         {[
           { label: "Item Name *", value: itemName, setter: setItemName, placeholder: "e.g. Full Fat Milk" },
