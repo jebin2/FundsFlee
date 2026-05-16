@@ -12,29 +12,10 @@ interface EmailStatus {
   emailsScanned: number;
   emailsParsed: number;
   emailsSkipped: number;
+  runningAt: string | null;  // set in sheet while job is running
 }
 
 type JobState = "idle" | "running" | "done";
-
-const SESSION_KEY = "emailFetchJob";
-interface PersistedJob { knownLastRun: string | null; triggeredAt: number; }
-
-function saveJobToSession(knownLastRun: string | null) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ knownLastRun, triggeredAt: Date.now() }));
-}
-function clearJobFromSession() {
-  sessionStorage.removeItem(SESSION_KEY);
-}
-function readJobFromSession(): PersistedJob | null {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const job = JSON.parse(raw) as PersistedJob;
-    // Expire after 5 minutes
-    if (Date.now() - job.triggeredAt > 5 * 60 * 1000) { clearJobFromSession(); return null; }
-    return job;
-  } catch { return null; }
-}
 
 export default function EmailImportSettingsPage() {
   const router = useRouter();
@@ -50,7 +31,6 @@ export default function EmailImportSettingsPage() {
   const filterInputRef = useRef<HTMLInputElement>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
-  const knownLastRunRef = useRef<string | null>(null);
 
   function stopPolling() {
     if (pollTimerRef.current) {
@@ -69,17 +49,15 @@ export default function EmailImportSettingsPage() {
     }
   }, []);
 
-  const startPolling = useCallback((knownLastRun: string | null) => {
+  const startPolling = useCallback(() => {
     stopPolling();
     pollCountRef.current = 0;
-    knownLastRunRef.current = knownLastRun;
 
     pollTimerRef.current = setInterval(async () => {
       pollCountRef.current++;
       // Give up after 60 polls × 5 s = 5 minutes
       if (pollCountRef.current > 60) {
         stopPolling();
-        clearJobFromSession();
         setJobState("idle");
         return;
       }
@@ -88,10 +66,9 @@ export default function EmailImportSettingsPage() {
       if (!data) return;
       setStatus(data);
 
-      // Job finished when lastRun changes from the value captured at trigger time
-      if (data.lastRun && data.lastRun !== knownLastRunRef.current) {
+      // Job finished when runningAt is cleared in the sheet
+      if (!data.runningAt) {
         stopPolling();
-        clearJobFromSession();
         setJobState("done");
         setTimeout(() => setJobState("idle"), 6000);
       }
@@ -106,18 +83,13 @@ export default function EmailImportSettingsPage() {
       setFromContains(data.fromContains);
       setDaysBack(data.daysBack);
 
-      // Resume polling if a job was in flight when the page was refreshed
-      const persisted = readJobFromSession();
-      if (persisted) {
-        if (data.lastRun && data.lastRun !== persisted.knownLastRun) {
-          // Job already finished while page was away
-          clearJobFromSession();
-          setJobState("done");
-          setTimeout(() => setJobState("idle"), 6000);
-        } else {
-          // Job still running — resume polling
+      // Resume polling if job is still running in the sheet (works across
+      // page refreshes, private windows, and other devices)
+      if (data.runningAt) {
+        const ageMs = Date.now() - new Date(data.runningAt).getTime();
+        if (ageMs < 5 * 60 * 1000) {
           setJobState("running");
-          startPolling(persisted.knownLastRun);
+          startPolling();
         }
       }
     }
@@ -171,22 +143,18 @@ export default function EmailImportSettingsPage() {
   async function fetchNow() {
     if (fromContains.length === 0) { setError("Add at least one filter first."); return; }
     setError("");
-    const knownLastRun = status?.lastRun ?? null;
     setJobState("running");
-    saveJobToSession(knownLastRun);
 
     try {
       const res = await fetch("/api/email/fetch", { method: "POST" });
       if (!res.ok) {
         setJobState("idle");
-        clearJobFromSession();
         setError("Could not trigger fetch — please try again.");
         return;
       }
-      startPolling(knownLastRun);
+      startPolling();
     } catch {
       setJobState("idle");
-      clearJobFromSession();
       setError("Network error — could not trigger fetch.");
     }
   }

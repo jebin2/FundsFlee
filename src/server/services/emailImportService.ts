@@ -36,6 +36,7 @@ export async function getEmailImportStatus(session: SheetSession) {
     daysBack: meta.email_import_days_back ? parseInt(meta.email_import_days_back) : 7,
     lastRun: meta.email_import_last_run ?? null,
     totalTxImported: parseInt(meta.email_import_tx_count ?? "0") || 0,
+    runningAt: meta.email_import_running_at || null,
   };
 }
 

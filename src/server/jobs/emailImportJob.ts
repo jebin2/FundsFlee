@@ -24,6 +24,7 @@ export interface EmailImportConfig {
   region: string;
   lastRun?: string;
   txCount: number;
+  runningAt?: string;  // set while job is in flight, cleared on finish
 }
 
 export async function readEmailImportConfig(session: SheetSession): Promise<EmailImportConfig> {
@@ -35,6 +36,7 @@ export async function readEmailImportConfig(session: SheetSession): Promise<Emai
     region: meta.region ?? "",
     lastRun: meta.email_import_last_run || undefined,
     txCount: parseInt(meta.email_import_tx_count ?? "0") || 0,
+    runningAt: meta.email_import_running_at || undefined,
   };
 }
 
@@ -140,6 +142,10 @@ export async function runEmailImportJob(session: SheetSession): Promise<EmailImp
     return { scanned: 0, imported: 0, skipped: 0, failed: 0 };
   }
 
+  // Mark job as running in the sheet — visible to any window/device polling status
+  await setMetaValue(session.accessToken, session.sheetId, "email_import_running_at", new Date().toISOString()).catch(() => {});
+
+  try {
   const gmail = getGmailClient(session.accessToken);
   const query = buildGmailQuery(config.fromContains, config.daysBack, config.lastRun);
 
@@ -252,4 +258,8 @@ export async function runEmailImportJob(session: SheetSession): Promise<EmailImp
   ]).catch(() => {});
 
   return result;
+  } finally {
+    // Always clear the running marker — whether job succeeded, failed, or threw
+    await setMetaValue(session.accessToken, session.sheetId, "email_import_running_at", "").catch(() => {});
+  }
 }
