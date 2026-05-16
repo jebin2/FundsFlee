@@ -1,12 +1,13 @@
 import { getGmailClient } from "@/lib/sheets/client";
 import {
   appendTransaction,
-  checkEmailParsed,
+  getProcessedEmailIds,
   recordParsedEmail,
   getMetaValues,
   setMetaValue,
   getTransactions,
 } from "@/lib/sheets";
+import { safeJsonParse } from "@/lib/safeJson";
 import { findDuplicates } from "@/lib/ai/dedup";
 import { updateTransactionField } from "@/lib/sheets";
 import { parseEmailTransaction, extractEmailText } from "@/lib/ai/parse-email";
@@ -27,9 +28,7 @@ export async function readEmailImportConfig(session: SheetSession): Promise<Emai
   const meta = await getMetaValues(session.accessToken, session.sheetId);
   return {
     enabled: meta.email_import_enabled === "true",
-    fromContains: meta.email_import_from_contains
-      ? JSON.parse(meta.email_import_from_contains) as string[]
-      : [],
+    fromContains: safeJsonParse<string[]>(meta.email_import_from_contains ?? null, []),
     daysBack: meta.email_import_days_back ? parseInt(meta.email_import_days_back) : 7,
     region: meta.region ?? "",
   };
@@ -156,6 +155,9 @@ export async function runEmailImportJob(session: SheetSession): Promise<EmailImp
     return { scanned: 0, imported: 0, skipped: 0, failed: 0 };
   }
 
+  // Load all previously-processed email IDs once — avoids N+1 Sheets API calls
+  const processedIds = await getProcessedEmailIds(session.accessToken, session.sheetId).catch(() => new Set<string>());
+
   const result: EmailImportResult = { scanned: 0, imported: 0, skipped: 0, failed: 0 };
   const newTxIds: string[] = [];
   const today = todayISO();
@@ -163,9 +165,8 @@ export async function runEmailImportJob(session: SheetSession): Promise<EmailImp
   for (const msgId of messageIds) {
     result.scanned++;
 
-    // Already processed → skip
-    const alreadyParsed = await checkEmailParsed(session.accessToken, session.sheetId, msgId).catch(() => false);
-    if (alreadyParsed) { result.skipped++; continue; }
+    // Already processed → skip (in-memory check, zero extra API calls)
+    if (processedIds.has(msgId)) { result.skipped++; continue; }
 
     // Fetch full message
     let from = "";

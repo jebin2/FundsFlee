@@ -6,8 +6,8 @@ import { requestEmailImport } from "@/server/services/emailImportService";
 export const maxDuration = 300;
 
 // Called by:
-//   1. Vercel Cron at midnight UTC  (vercel.json: "0 0 * * *")
-//   2. Manual "Fetch now" button in settings (POST from client)
+//   1. useSyncEffect (daily auto-trigger — fires when last_run > 23h, uses browser session)
+//   2. Manual "Fetch now" button in settings
 //
 // Always fire-and-forget — responds immediately, job runs in background.
 export const POST = withSession("POST email fetch", async (session) => {

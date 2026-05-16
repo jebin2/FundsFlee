@@ -11,6 +11,33 @@ import {
   conflictCount,
 } from "@/lib/offline";
 
+// Fire email import in the background if: enabled + at least one filter set +
+// last run was more than 23 hours ago (≈ daily). Uses the existing browser
+// session so no cron auth issues. Fire-and-forget, never throws.
+async function triggerEmailImportIfDue(): Promise<void> {
+  try {
+    const res = await fetch("/api/email/config");
+    if (!res.ok) return;
+    const config = await res.json() as {
+      enabled: boolean;
+      fromContains: string[];
+      lastRun: string | null;
+    };
+
+    if (!config.enabled || config.fromContains.length === 0) return;
+
+    const hoursSinceLastRun = config.lastRun
+      ? (Date.now() - new Date(config.lastRun).getTime()) / 3_600_000
+      : Infinity;
+
+    if (hoursSinceLastRun >= 23) {
+      fetch("/api/email/fetch", { method: "POST" }).catch(() => {});
+    }
+  } catch {
+    // Never fail the sync because of email import
+  }
+}
+
 export function useSyncEffect() {
   const { setTransactions, setSyncing } = useTransactionsStore();
   const { setOnline, setPendingCount, setConflictCount } = useNetworkStore();
@@ -26,6 +53,8 @@ export function useSyncEffect() {
     } finally {
       setSyncing(false);
     }
+    // Trigger email import daily, fire-and-forget, never blocks sync
+    triggerEmailImportIfDue().catch(() => {});
   }
 
   async function goOnline() {

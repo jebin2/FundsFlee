@@ -24,7 +24,19 @@ async function getAllRows(sheets: ReturnType<typeof getSheetsClient>, sheetId: s
   return (res.data.values ?? []) as string[][];
 }
 
+// Load ALL processed email IDs into a Set — call ONCE per job run,
+// then check Set.has() in memory instead of hitting the Sheets API per email.
+export async function getProcessedEmailIds(
+  accessToken: string,
+  sheetId: string
+): Promise<Set<string>> {
+  const sheets = getSheetsClient(accessToken);
+  const rows = await getAllRows(sheets, sheetId);
+  return new Set(rows.map((r) => r[COLS.emailId]).filter(Boolean));
+}
+
 // Returns true if this email has already been processed (any status).
+// Prefer getProcessedEmailIds() in loops to avoid N+1 Sheets API calls.
 export async function checkEmailParsed(
   accessToken: string,
   sheetId: string,
