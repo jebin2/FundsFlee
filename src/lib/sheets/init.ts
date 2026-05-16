@@ -92,7 +92,7 @@ export async function initSpendingSheet(
     requestBody: { appProperties: { [APP_PROP_KEY]: APP_SHEET_ROLE } },
   });
 
-  // Headers — 25 columns (A–Y)
+  // Headers — 26 columns (A–Z)
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "transactions!A1:Z1",
@@ -103,7 +103,7 @@ export async function initSpendingSheet(
         "merchant", "category", "subcategory", "item_name", "payment_method",
         "tags", "notes", "source", "raw_input", "location",
         "is_duplicate", "duplicate_ref", "created_at", "updated_at",
-        "status", "receipt_url", "receipt_id", "quantity", "deleted",
+        "status", "receipt_url", "receipt_id", "quantity", "deleted", "recurrence",
       ]],
     },
   });
@@ -201,7 +201,7 @@ export async function resetSheet(
     spreadsheetId: sheetId,
     requestBody: {
       ranges: [
-        "transactions!A2:Y",
+        "transactions!A2:Z",
         "categories!A2:G",
         "analysis_cache!A2:G",
         "item_suggestions!A2:G",

@@ -38,7 +38,9 @@ export function useTransactions() {
 
   // Load the next page and merge into the store
   const loadMore = useCallback(async () => {
-    if (loadingMore || !useTransactionsStore.getState().hasMore) return;
+    // Read both flags from store state to avoid stale closure race
+    const state = useTransactionsStore.getState();
+    if (state.loadingMore || !state.hasMore) return;
     setLoadingMore(true);
     try {
       const nextPage = currentPageRef.current + 1;
@@ -50,7 +52,7 @@ export function useTransactions() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, mergeTransactions, setLoadingMore]);
+  }, [mergeTransactions, setLoadingMore]);
 
   return { transactions, total, hasMore, syncing, loadingMore, refresh, loadMore };
 }
