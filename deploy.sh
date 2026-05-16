@@ -4,6 +4,7 @@ set -euo pipefail
 APP_NAME="fundsflee"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-3000}"
+DOMAIN="fundsflee.voidall.com"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -13,22 +14,26 @@ error() { echo -e "${RED}[✗]${NC} $*"; exit 1; }
 step()  { echo -e "\n${BLUE}──${NC} $*"; }
 
 echo ""
-echo "  FundsFlee — VPS deploy"
+echo "  FundsFlee — VPS deploy (Cloudflare Tunnel)"
 echo "  ─────────────────────────────────────────"
 
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
 step "Node.js"
 if ! command -v node &>/dev/null; then
+  # Try loading nvm first (may already be installed)
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+fi
+if ! command -v node &>/dev/null; then
   warn "Node.js not found — installing via nvm..."
   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
   # shellcheck source=/dev/null
-  [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+  source "$NVM_DIR/nvm.sh"
   nvm install --lts
   nvm use --lts
-else
-  info "Node.js $(node -v)"
 fi
+info "Node.js $(node -v)"
 
 # ── 2. PM2 ────────────────────────────────────────────────────────────────────
 step "PM2"
@@ -41,13 +46,13 @@ info "PM2 $(pm2 --version)"
 # ── 3. .env.local ─────────────────────────────────────────────────────────────
 step ".env.local"
 if [ ! -f "$APP_DIR/.env.local" ]; then
-  error ".env.local not found.\n\n  Copy and fill in your keys:\n\n    cp $APP_DIR/.env.local.example $APP_DIR/.env.local\n    nano $APP_DIR/.env.local\n\n  Then re-run this script."
+  error ".env.local not found.\n\n  cp $APP_DIR/.env.local.example $APP_DIR/.env.local\n  nano $APP_DIR/.env.local\n\n  Then re-run this script."
 fi
 info ".env.local found"
 
 NEXTAUTH_URL=$(grep -E '^NEXTAUTH_URL=' "$APP_DIR/.env.local" | cut -d= -f2- | tr -d '"' || true)
 if [[ "$NEXTAUTH_URL" == *"localhost"* ]]; then
-  warn "NEXTAUTH_URL is still localhost — update it to your domain or VPS IP"
+  warn "NEXTAUTH_URL is still localhost — set it to https://$DOMAIN"
 fi
 
 # ── 4. Install dependencies ───────────────────────────────────────────────────
@@ -70,10 +75,8 @@ else
   info "Starting '$APP_NAME' on port $PORT..."
   pm2 start npm --name "$APP_NAME" -- start -- -p "$PORT"
 fi
-
 pm2 save
 
-# PM2 startup — output the sudo command if needed
 STARTUP_CMD=$(pm2 startup 2>&1 | grep "sudo" || true)
 if [ -n "$STARTUP_CMD" ]; then
   warn "Run this once to enable auto-start on reboot:"
@@ -82,100 +85,91 @@ if [ -n "$STARTUP_CMD" ]; then
   echo ""
 fi
 
-# ── 7. Nginx ──────────────────────────────────────────────────────────────────
-step "Nginx"
-DOMAIN=$(grep -E '^NEXTAUTH_URL=' "$APP_DIR/.env.local" | cut -d= -f2- | tr -d '"' | sed 's|https\?://||' | cut -d: -f1 || true)
+# ── 7. Cloudflare Tunnel ──────────────────────────────────────────────────────
+step "Cloudflare Tunnel"
 
-if ! command -v nginx &>/dev/null; then
-  warn "Nginx not found — installing..."
-  if command -v apt-get &>/dev/null; then
-    sudo apt-get update -qq && sudo apt-get install -y nginx
-  elif command -v yum &>/dev/null; then
-    sudo yum install -y nginx
-  elif command -v dnf &>/dev/null; then
-    sudo dnf install -y nginx
-  else
-    warn "Could not auto-install nginx. Install it manually then re-run."
+# Locate the cloudflared config file
+CF_CONFIG=""
+for candidate in \
+    /etc/cloudflared/config.yml \
+    /root/.cloudflared/config.yml \
+    "$HOME/.cloudflared/config.yml"; do
+  if [ -f "$candidate" ]; then
+    CF_CONFIG="$candidate"
+    break
   fi
-fi
+done
 
-if command -v nginx &>/dev/null; then
-  NGINX_CONF="/etc/nginx/sites-available/$APP_NAME"
-  NGINX_ENABLED="/etc/nginx/sites-enabled/$APP_NAME"
-
-  sudo tee "$NGINX_CONF" > /dev/null <<NGINX
-server {
-    listen 80;
-    server_name ${DOMAIN:-_};
-
-    location / {
-        proxy_pass         http://127.0.0.1:$PORT;
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade \$http_upgrade;
-        proxy_set_header   Connection 'upgrade';
-        proxy_set_header   Host \$host;
-        proxy_set_header   X-Real-IP \$remote_addr;
-        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_read_timeout 60s;
-    }
-}
-NGINX
-
-  # Enable site — symlink into sites-enabled (Debian/Ubuntu style).
-  # Never touch other sites' configs (e.g. opencode.voidall.com).
-  if [ -d /etc/nginx/sites-enabled ]; then
-    sudo ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
-  fi
-
-  sudo nginx -t && sudo systemctl reload nginx && sudo systemctl enable nginx
-  info "Nginx configured → $DOMAIN → 127.0.0.1:$PORT"
-  info "Existing sites (opencode etc.) are untouched"
-fi
-
-# ── 8. SSL with Certbot ───────────────────────────────────────────────────────
-step "SSL (Let's Encrypt)"
-
-# Only attempt SSL if domain is not an IP address
-if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ -z "$DOMAIN" ]; then
-  warn "Skipping SSL — NEXTAUTH_URL is an IP address or not set. SSL requires a real domain."
-elif [[ "$NEXTAUTH_URL" == http://* ]]; then
-  warn "NEXTAUTH_URL uses http:// — skipping SSL. Update to https:// once DNS is pointed at this server, then re-run."
+if [ -z "$CF_CONFIG" ]; then
+  warn "cloudflared config not found. Add the route manually:"
+  echo ""
+  echo "  Edit your tunnel config (e.g. /etc/cloudflared/config.yml):"
+  echo "  Add this line in the ingress section BEFORE the catch-all:"
+  echo ""
+  echo "    - hostname: $DOMAIN"
+  echo "      service: http://localhost:$PORT"
+  echo ""
+  echo "  Then: sudo systemctl restart cloudflared"
 else
-  if ! command -v certbot &>/dev/null; then
-    warn "Certbot not found — installing..."
-    if command -v apt-get &>/dev/null; then
-      sudo apt-get install -y certbot python3-certbot-nginx
-    elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
-      sudo yum install -y certbot python3-certbot-nginx 2>/dev/null || \
-      sudo dnf install -y certbot python3-certbot-nginx
+  info "Found cloudflared config: $CF_CONFIG"
+
+  # Check if this hostname is already in the config
+  if grep -q "$DOMAIN" "$CF_CONFIG"; then
+    info "$DOMAIN already in tunnel config — no change needed"
+  else
+    # Insert the new ingress rule before the catch-all (last line with just 'service:')
+    # Back up first
+    sudo cp "$CF_CONFIG" "${CF_CONFIG}.bak"
+
+    # Insert before the catch-all rule (the line that has 'service:' but no 'hostname:')
+    sudo python3 - "$CF_CONFIG" "$DOMAIN" "$PORT" <<'PYEOF'
+import sys, re
+
+config_path, domain, port = sys.argv[1], sys.argv[2], sys.argv[3]
+new_rule = f"  - hostname: {domain}\n    service: http://localhost:{port}\n"
+
+with open(config_path) as f:
+    content = f.read()
+
+# Insert before the final catch-all service line
+# The catch-all looks like:  - service: http_status:404  (no hostname:)
+catchall = re.search(r'^(\s*- service:\s*http_status:\d+\s*)$', content, re.MULTILINE)
+if catchall:
+    content = content[:catchall.start()] + new_rule + content[catchall.start():]
+else:
+    # No catch-all found — just append to ingress block
+    content = content.rstrip() + "\n" + new_rule
+
+with open(config_path, 'w') as f:
+    f.write(content)
+
+print("Config updated.")
+PYEOF
+
+    info "Added $DOMAIN → localhost:$PORT to tunnel config"
+
+    # Restart cloudflared
+    if systemctl is-active --quiet cloudflared 2>/dev/null; then
+      sudo systemctl restart cloudflared
+      info "cloudflared restarted"
+    elif systemctl is-active --quiet cloudflared@* 2>/dev/null; then
+      sudo systemctl restart 'cloudflared@*'
+      info "cloudflared restarted"
+    else
+      warn "Could not restart cloudflared automatically."
+      echo "  Run: sudo systemctl restart cloudflared"
     fi
   fi
 
-  if command -v certbot &>/dev/null; then
-    EMAIL=$(grep -E '^#.*email|GOOGLE_CLIENT_ID' "$APP_DIR/.env.local" | head -1 || true)
-    warn "Running Certbot for $DOMAIN — follow the prompts..."
-    sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
-      --email "admin@$DOMAIN" --redirect || \
-    warn "Certbot failed — run manually: sudo certbot --nginx -d $DOMAIN"
-    info "SSL configured"
+  # Add DNS route via cloudflared (idempotent — safe to run multiple times)
+  if command -v cloudflared &>/dev/null; then
+    TUNNEL_ID=$(grep -E '^tunnel:' "$CF_CONFIG" | awk '{print $2}' | tr -d '"' || true)
+    if [ -n "$TUNNEL_ID" ]; then
+      cloudflared tunnel route dns "$TUNNEL_ID" "$DOMAIN" 2>/dev/null && \
+        info "DNS route added: $DOMAIN → tunnel $TUNNEL_ID" || \
+        warn "DNS route may already exist or needs manual setup in Cloudflare dashboard"
+    fi
   fi
-fi
-
-# ── 9. Oracle firewall ────────────────────────────────────────────────────────
-step "Firewall"
-# Oracle VPS blocks ports at OS level via iptables even if the Cloud Security List is open
-if command -v iptables &>/dev/null; then
-  sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT  2>/dev/null || true
-  sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true
-  # Persist rules across reboots
-  if command -v netfilter-persistent &>/dev/null; then
-    sudo netfilter-persistent save 2>/dev/null || true
-  elif command -v iptables-save &>/dev/null; then
-    sudo iptables-save | sudo tee /etc/iptables/rules.v4 > /dev/null 2>/dev/null || true
-  fi
-  info "Ports 80 and 443 opened in iptables"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -183,15 +177,15 @@ echo ""
 echo "  ─────────────────────────────────────────"
 info "Done!"
 echo ""
-echo "  App:     http://127.0.0.1:$PORT  (internal)"
-[ -n "${DOMAIN:-}" ] && echo "  Domain:  ${NEXTAUTH_URL:-http://$DOMAIN}"
+echo "  App running locally on port $PORT"
+echo "  Tunnel:  https://$DOMAIN"
 echo ""
 echo "  Useful commands:"
-echo "    pm2 logs $APP_NAME          — live app logs"
-echo "    pm2 status                  — process status"
-echo "    pm2 restart $APP_NAME       — restart app"
-echo "    sudo nginx -t               — test nginx config"
-echo "    sudo certbot renew --dry-run — test SSL renewal"
+echo "    pm2 logs $APP_NAME              — live app logs"
+echo "    pm2 status                      — process status"
+echo "    pm2 restart $APP_NAME           — restart app"
+echo "    sudo systemctl status cloudflared — tunnel status"
+echo "    cloudflared tunnel info          — tunnel details"
 echo ""
 echo "  To update: git pull && bash deploy.sh"
 echo ""
