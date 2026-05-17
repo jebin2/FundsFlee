@@ -13,6 +13,7 @@ export default function DataSettingsPage() {
   const { transactions } = useTransactions();
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   async function exportCSV() {
     setExporting(true);
@@ -42,6 +43,25 @@ export default function DataSettingsPage() {
     }
   }
 
+  async function refreshApp() {
+    if (!confirm("Clear all cached files and reload the latest version of the app?")) return;
+    setRefreshing(true);
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((reg) => reg.update()));
+      }
+      window.location.reload();
+    } catch {
+      setRefreshing(false);
+      alert("Refresh failed — please reload manually.");
+    }
+  }
+
   function clearLocalCache() {
     if (!confirm("Clear local cache? Your data in Google Sheets is unaffected.")) return;
     setClearing(true);
@@ -51,6 +71,15 @@ export default function DataSettingsPage() {
   }
 
   const items = [
+    {
+      icon: "system_update",
+      label: "Refresh App",
+      sub: "Clear cached files and load the latest version",
+      action: refreshApp,
+      loading: refreshing,
+      color: "#0277bd",
+      bg: "#e1f5fe",
+    },
     {
       icon: "download",
       label: "Export as CSV",
