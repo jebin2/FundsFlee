@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 interface CronStatus {
   registered: boolean;
   email: { lastRun: string | null; runningAt: string | null; txCount: number; enabled: boolean };
-  dedup: { lastRun: string | null };
+  dedup: { lastRun: string | null; runningAt: string | null };
   schedule: string;
 }
 
@@ -22,12 +22,17 @@ function relativeTime(iso: string | null): string {
   return `${days}d ago`;
 }
 
+function isRecentlyRunning(runningAt: string | null): boolean {
+  if (!runningAt) return false;
+  return Date.now() - new Date(runningAt).getTime() < 5 * 60 * 1000;
+}
+
 export default function ScheduledSettingsPage() {
   const router = useRouter();
-  const [status,  setStatus]  = useState<CronStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status,     setStatus]     = useState<CronStatus | null>(null);
+  const [loading,    setLoading]    = useState(true);
   const [triggering, setTriggering] = useState<"all" | "email" | "dedup" | null>(null);
-  const [lastMsg, setLastMsg] = useState<string | null>(null);
+  const [lastMsg,    setLastMsg]    = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async (): Promise<CronStatus | null> => {
@@ -44,25 +49,26 @@ export default function ScheduledSettingsPage() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }
 
+  // Poll every 10s (reduced from 5s to stay within Sheets quota).
+  // Stops when neither email nor dedup is running.
   function startPolling() {
     stopPolling();
     let ticks = 0;
     pollRef.current = setInterval(async () => {
-      if (++ticks > 72) { stopPolling(); return; } // 6 min max
+      if (++ticks > 36) { stopPolling(); return; } // 6 min max
       const data = await fetchStatus();
-      if (data && !data.email.runningAt) {
+      if (data && !isRecentlyRunning(data.email.runningAt) && !isRecentlyRunning(data.dedup.runningAt)) {
         stopPolling();
       }
-    }, 5000);
+    }, 10_000);
   }
 
   useEffect(() => {
     fetchStatus().then((data) => {
       setLoading(false);
-      // If email is already running when page opens, start polling
-      if (data?.email.runningAt) {
-        const ageMs = Date.now() - new Date(data.email.runningAt).getTime();
-        if (ageMs < 5 * 60 * 1000) startPolling();
+      // Resume polling if anything is still running when the page opens
+      if (data && (isRecentlyRunning(data.email.runningAt) || isRecentlyRunning(data.dedup.runningAt))) {
+        startPolling();
       }
     });
     return () => stopPolling();
@@ -74,18 +80,19 @@ export default function ScheduledSettingsPage() {
     setTriggering(job);
     setLastMsg(null);
     try {
-      const res = await fetch(`/api/cron/run?job=${job}`, { method: "POST" });
+      const res  = await fetch(`/api/cron/run?job=${job}`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         setLastMsg(
           job === "email" ? "Email import started — running in background." :
           job === "dedup" ? "Duplicate check complete." :
-          "Jobs started — email import running in background."
+          "Jobs complete."
         );
-        await fetchStatus();
-        // Start polling if email is now running
         const s = await fetchStatus();
-        if (s?.email.runningAt) startPolling();
+        // Start polling if anything is now running server-side
+        if (s && (isRecentlyRunning(s.email.runningAt) || isRecentlyRunning(s.dedup.runningAt))) {
+          startPolling();
+        }
       } else {
         setLastMsg(data.error ?? "Failed.");
       }
@@ -96,38 +103,44 @@ export default function ScheduledSettingsPage() {
     }
   }
 
-  const emailServerRunning = Boolean(
-    status?.email.runningAt &&
-    Date.now() - new Date(status.email.runningAt).getTime() < 5 * 60 * 1000
-  );
-  const isAnyRunning = !!triggering || emailServerRunning;
+  const emailServerRunning = isRecentlyRunning(status?.email.runningAt ?? null);
+  const dedupServerRunning = isRecentlyRunning(status?.dedup.runningAt ?? null);
+  const isAnyRunning       = !!triggering || emailServerRunning || dedupServerRunning;
 
   const jobs = [
     {
-      key:     "email" as const,
-      icon:    "mark_email_read",
-      label:   "Email Import",
-      sub:     status?.email.enabled
-                 ? `${status.email.txCount} total imported`
-                 : "Disabled — configure filters in Email Import settings",
-      lastRun: status?.email.lastRun ?? null,
+      key:           "email" as const,
+      icon:          "mark_email_read",
+      label:         "Email Import",
+      sub:           status?.email.enabled
+                       ? `${status.email.txCount} total imported`
+                       : "Disabled — configure filters in Email Import settings",
+      lastRun:       status?.email.lastRun ?? null,
       serverRunning: emailServerRunning,
-      enabled: status?.email.enabled ?? false,
-      color:   "var(--color-primary)",
-      bg:      "var(--color-primary-fixed)",
+      enabled:       status?.email.enabled ?? false,
+      color:         "var(--color-primary)",
+      bg:            "var(--color-primary-fixed)",
     },
     {
-      key:     "dedup" as const,
-      icon:    "content_copy",
-      label:   "Duplicate Detection",
-      sub:     "Scans all transactions and flags duplicates",
-      lastRun: status?.dedup.lastRun ?? null,
-      serverRunning: false,
-      enabled: true,
-      color:   "#0277bd",
-      bg:      "#e1f5fe",
+      key:           "dedup" as const,
+      icon:          "content_copy",
+      label:         "Duplicate Detection",
+      sub:           "Scans all transactions and flags duplicates",
+      lastRun:       status?.dedup.lastRun ?? null,
+      serverRunning: dedupServerRunning,
+      enabled:       true,
+      color:         "#0277bd",
+      bg:            "#e1f5fe",
     },
   ];
+
+  const runAllLabel = triggering === "all"
+    ? "Running…"
+    : emailServerRunning
+    ? "Email running…"
+    : dedupServerRunning
+    ? "Dedup running…"
+    : "Run All Jobs Now";
 
   return (
     <div className="max-w-lg mx-auto px-5 pb-10">
@@ -182,7 +195,7 @@ export default function ScheduledSettingsPage() {
         {/* Job rows */}
         <div className="rounded-3xl overflow-hidden border" style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
           {jobs.map((job, i) => {
-            const isRunning = job.serverRunning || triggering === job.key || (triggering === "all");
+            const isRunning = job.serverRunning || triggering === job.key || triggering === "all";
             const disabled  = isAnyRunning || !job.enabled;
 
             return (
@@ -214,10 +227,10 @@ export default function ScheduledSettingsPage() {
                   disabled={disabled}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
                   style={{
-                    background:  job.enabled ? job.bg : "var(--color-surface-container)",
-                    color:       job.enabled ? job.color : "var(--color-outline)",
-                    opacity:     disabled ? 0.4 : 1,
-                    cursor:      disabled ? "not-allowed" : "pointer",
+                    background: job.enabled ? job.bg : "var(--color-surface-container)",
+                    color:      job.enabled ? job.color : "var(--color-outline)",
+                    opacity:    disabled ? 0.4 : 1,
+                    cursor:     disabled ? "not-allowed" : "pointer",
                   }}>
                   {isRunning
                     ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
@@ -243,12 +256,12 @@ export default function ScheduledSettingsPage() {
             opacity:    isAnyRunning ? 0.4 : 1,
             cursor:     isAnyRunning ? "not-allowed" : "pointer",
           }}>
-          {triggering === "all"
+          {(triggering === "all" || isAnyRunning)
             ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
                 style={{ borderColor: "rgba(255,255,255,0.4)", borderTopColor: "#fff" }} />
             : <span className="material-symbols-outlined" style={{ fontSize: 18 }}>play_circle</span>
           }
-          {triggering === "all" ? "Running…" : emailServerRunning ? "Email running…" : "Run All Jobs Now"}
+          {runAllLabel}
         </button>
 
       </div>

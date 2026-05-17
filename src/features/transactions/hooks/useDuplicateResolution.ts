@@ -21,7 +21,7 @@ export function useDuplicateResolution(loadData: () => Promise<Transaction[]>) {
     stopPolling();
     let ticks = 0;
     pollRef.current = setInterval(async () => {
-      if (++ticks > 60) { stopPolling(); setDupChecking(false); return; } // 5 min max
+      if (++ticks > 36) { stopPolling(); setDupChecking(false); return; } // 6 min max
       try {
         const res = await fetch("/api/cron/status");
         if (!res.ok) return;
@@ -32,7 +32,7 @@ export function useDuplicateResolution(loadData: () => Promise<Transaction[]>) {
           await loadData();
         }
       } catch { /* network blip — keep polling */ }
-    }, 5000);
+    }, 10_000);
   }, [loadData]);
 
   // On mount: check if dedup is already running server-side (survives page reload)
