@@ -1,6 +1,6 @@
 {
   "name": "FundsFlee",
-  "short_name": "Spending",
+  "short_name": "FundsFlee",
   "description": "Your AI spending agent",
   "start_url": "/",
   "display": "standalone",

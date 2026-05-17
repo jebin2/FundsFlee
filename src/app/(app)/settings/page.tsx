@@ -56,6 +56,7 @@ export default function SettingsPage() {
         { icon: "download", label: "Data & Export", sub: "Export CSV, clear cache", href: "/settings/data" },
         { icon: "picture_as_pdf", label: "Import Statement", sub: "Upload bank PDF — AI extracts all transactions", href: "/import" },
         { icon: "mark_email_read", label: "Email Import", sub: "Auto-import transactions from Gmail daily", href: "/settings/email" },
+        { icon: "schedule", label: "Scheduled Tasks", sub: "Daily email import & duplicate check at 12:00 PM", href: "/settings/scheduled" },
       ],
     },
     {

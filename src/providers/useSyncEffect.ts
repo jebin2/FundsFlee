@@ -52,7 +52,8 @@ export function useSyncEffect() {
     } finally {
       setSyncing(false);
     }
-    // Trigger email import daily, fire-and-forget, never blocks sync
+    // Keep server-side cron credentials fresh and trigger email import if due
+    fetch("/api/cron/register", { method: "POST" }).catch(() => {});
     triggerEmailImportIfDue().catch(() => {});
   }
 
