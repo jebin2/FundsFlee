@@ -5,27 +5,33 @@ import { getMetaValues, setMetaValue } from "@/lib/sheets";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me");
 
-async function generateToken(email: string, sheetId: string): Promise<string> {
-  return new SignJWT({ email, sheetId, purpose: "shortcut" })
+async function generateToken(
+  email: string,
+  sheetId: string,
+  refreshToken: string,
+  region: string,
+): Promise<string> {
+  return new SignJWT({ email, sheetId, purpose: "shortcut", refreshToken, region })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .sign(SECRET);
 }
 
 export const GET = withSession("GET token", async (session) => {
-  const { accessToken, sheetId, userEmail } = session;
+  const { accessToken, refreshToken, sheetId, userEmail } = session;
   if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const meta = await getMetaValues(accessToken, sheetId);
-  if (meta.shortcut_token) return NextResponse.json({ token: meta.shortcut_token });
-  const token = await generateToken(userEmail, sheetId);
+  // Always regenerate so the embedded refreshToken stays current
+  const token = await generateToken(userEmail, sheetId, refreshToken ?? "", meta.region ?? "");
   await setMetaValue(accessToken, sheetId, "shortcut_token", token);
   return NextResponse.json({ token });
 });
 
 export const POST = withSession("POST token", async (session) => {
-  const { accessToken, sheetId, userEmail } = session;
+  const { accessToken, refreshToken, sheetId, userEmail } = session;
   if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const token = await generateToken(userEmail, sheetId);
+  const meta = await getMetaValues(accessToken, sheetId);
+  const token = await generateToken(userEmail, sheetId, refreshToken ?? "", meta.region ?? "");
   await setMetaValue(accessToken, sheetId, "shortcut_token", token);
   return NextResponse.json({ token });
 });

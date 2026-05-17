@@ -7,6 +7,23 @@ import { todayISO } from "@/lib/date/iso";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me");
 
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id:     process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      grant_type:    "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) throw new Error("token_refresh_failed");
+  const data = await res.json() as { access_token?: string };
+  if (!data.access_token) throw new Error("token_refresh_failed");
+  return data.access_token;
+}
+
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) {
@@ -14,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const token = auth.slice(7);
-  let payload: { email: string; sheetId: string; region?: string };
+  let payload: { email: string; sheetId: string; region?: string; refreshToken?: string };
 
   try {
     const { payload: p } = await jwtVerify(token, SECRET);
@@ -27,12 +44,18 @@ export async function POST(req: NextRequest) {
   const { text, source = "shortcut" } = await req.json();
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
 
-  const accessToken = process.env.SERVICE_ACCOUNT_TOKEN ?? "";
-  if (!accessToken) {
-    return NextResponse.json({ error: "Server not configured for shortcut auth" }, { status: 500 });
+  if (!payload.refreshToken) {
+    return NextResponse.json({ error: "Token is outdated — please reinstall the shortcut from the app." }, { status: 401 });
   }
 
-  const parsed = await parseTransactionText(text, payload.region, todayISO());
+  let accessToken: string;
+  try {
+    accessToken = await refreshAccessToken(payload.refreshToken);
+  } catch {
+    return NextResponse.json({ error: "Could not authenticate — please reinstall the shortcut from the app." }, { status: 401 });
+  }
+
+  const parsed = await parseTransactionText(text, payload.region ?? "", todayISO());
 
   const tx: Transaction = {
     id: crypto.randomUUID(),

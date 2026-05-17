@@ -15,6 +15,7 @@ export async function requireSession(): Promise<SessionResult> {
     ok: true,
     session: {
       accessToken: session.access_token,
+      refreshToken: session.refresh_token,
       sheetId: session.sheet_id,
       userEmail: session.user?.email ?? undefined,
     },
