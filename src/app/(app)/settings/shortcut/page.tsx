@@ -10,6 +10,7 @@ export default function ShortcutSettingsPage() {
   const [showToken, setShowToken] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
+  const [showDoneModal, setShowDoneModal] = useState(false);
 
   useEffect(() => {
     fetch("/api/user/token").then((r) => r.json()).then((d) => setToken(d.token));
@@ -36,10 +37,10 @@ export default function ShortcutSettingsPage() {
       if (!res.ok) throw new Error("Failed to prepare install");
       const { prepareId } = await res.json() as { prepareId: string };
       const fileUrl = `${window.location.origin}/api/shortcut/install.shortcut?id=${encodeURIComponent(prepareId)}`;
-      // Navigate directly to the file URL — iOS handles .shortcut downloads natively
-      // and shows a share sheet with "Open in Shortcuts". The shortcuts:// URL scheme
-      // is blocked by Apple for self-hosted servers on iOS 13.1+.
-      window.location.href = fileUrl;
+      // Open in a new window — on iOS PWA this triggers an in-app Safari view
+      // which shows a download banner. The user then taps "Open in Shortcuts".
+      window.open(fileUrl, "_blank");
+      setShowDoneModal(true);
     } catch {
       alert("Could not prepare shortcut — please try again.");
     } finally {
@@ -158,6 +159,63 @@ export default function ShortcutSettingsPage() {
         </div>
 
       </div>
+
+      {/* Post-download instructions */}
+      {showDoneModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+          onClick={() => setShowDoneModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-3xl p-6 flex flex-col gap-4"
+            style={{ background: "var(--color-surface)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--color-primary-fixed)" }}>
+                <span className="material-symbols-outlined" style={{ color: "var(--color-primary)", fontSize: 24 }}>download_done</span>
+              </div>
+              <div>
+                <p style={{ fontSize: 17, fontWeight: 700, color: "var(--color-on-surface)" }}>File is downloading…</p>
+                <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)", marginTop: 2 }}>Follow the steps below to add it to Shortcuts</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {[
+                { n: 1, icon: "ios_share", text: "When the download banner appears at the bottom — tap it" },
+                { n: 2, icon: "shortcut", text: "Tap 'Open in Shortcuts' on the share sheet" },
+                { n: 3, icon: "add_circle", text: "Tap 'Add Shortcut' in the Shortcuts app" },
+              ].map(({ n, icon, text }) => (
+                <div key={n} className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                  style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ background: "var(--color-primary)", color: "#fff", fontSize: 13, fontWeight: 700 }}>{n}</div>
+                  <span className="material-symbols-outlined flex-shrink-0" style={{ color: "var(--color-primary)", fontSize: 20 }}>{icon}</span>
+                  <p style={{ fontSize: 14, color: "var(--color-on-surface)" }}>{text}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 px-1">
+              <span className="material-symbols-outlined flex-shrink-0" style={{ color: "var(--color-outline)", fontSize: 16, marginTop: 1 }}>info</span>
+              <p style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>
+                No banner? Open the <strong>Files app → Downloads</strong>, tap <strong>FundsFlee.shortcut</strong>, then tap the share icon.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowDoneModal(false)}
+              className="w-full py-3 rounded-2xl font-medium"
+              style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 15 }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Setup modal */}
       {showSetupModal && (
