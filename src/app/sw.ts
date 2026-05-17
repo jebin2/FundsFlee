@@ -147,6 +147,13 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   runtimeCaching: [
+    // Web Share Target Level 2 — Chrome requires the SW to respond to the POST
+    // so the app appears in the OS share sheet for image/file sharing.
+    {
+      matcher: /^https?:\/\/[^/]+\/api\/share/,
+      handler: new NetworkOnly(),
+      method: "POST",
+    },
     {
       matcher: /^https?:\/\/[^/]+\/api\/auth\/session/,
       handler: new NetworkFirst({
