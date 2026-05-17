@@ -2,6 +2,7 @@ import type { Transaction } from "@/types";
 import { getSheetsClient, withSheetsRetry } from "./client";
 import { ensureTransactionSchema } from "./init";
 import {
+  COLS,
   transactionToRow,
   rowToTransaction,
   isDeletedRow,
