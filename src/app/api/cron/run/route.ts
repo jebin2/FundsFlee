@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
 import { requestEmailImport } from "@/server/services/emailImportService";
+import { runEmailImportJob } from "@/server/jobs/emailImportJob";
 import { runDuplicateDetection } from "@/server/services/duplicateDetectionService";
 import { log } from "@/lib/logger";
 
@@ -13,17 +14,19 @@ export const POST = withSession("POST cron/run", async (session, req: NextReques
   const job = new URL(req.url).searchParams.get("job") ?? "all";
 
   if (job === "all") {
-    log.info("cron", "manual run all — email + dedup");
+    log.info("cron", "manual run all — email then dedup (sequential)");
     const results: Record<string, string> = {};
 
+    // Step 1 — email import (awaited so dedup only starts after it finishes)
     try {
-      requestEmailImport(session, { manual: true });
-      results.email = "started (background)";
+      const r = await runEmailImportJob(session, { manual: true });
+      results.email = `done (scanned=${r.scanned} imported=${r.imported} skipped=${r.skipped})`;
     } catch (err) {
-      log.error("cron", "email trigger failed", err);
+      log.error("cron", "email import failed", err);
       results.email = "failed";
     }
 
+    // Step 2 — duplicate detection
     try {
       await runDuplicateDetection(session);
       results.dedup = "done";
