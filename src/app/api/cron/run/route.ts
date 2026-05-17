@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
-import { runDailyJobs } from "@/lib/cron/scheduler";
 import { requestEmailImport } from "@/server/services/emailImportService";
 import { runDuplicateDetection } from "@/server/services/duplicateDetectionService";
+import { log } from "@/lib/logger";
 
 export const maxDuration = 300;
 
@@ -13,34 +13,37 @@ export const POST = withSession("POST cron/run", async (session, req: NextReques
   const job = new URL(req.url).searchParams.get("job") ?? "all";
 
   if (job === "all") {
-    // Use the scheduler's runDailyJobs which reads from the stored cron session.
-    // For a UI-triggered run we want to use the live session instead, so call
-    // each job directly.
+    log.info("cron", "manual run all — email + dedup");
     const results: Record<string, string> = {};
 
     try {
       requestEmailImport(session, { manual: true });
-      results.email = "started";
-    } catch {
+      results.email = "started (background)";
+    } catch (err) {
+      log.error("cron", "email trigger failed", err);
       results.email = "failed";
     }
 
     try {
       await runDuplicateDetection(session);
       results.dedup = "done";
-    } catch {
+    } catch (err) {
+      log.error("cron", "dedup failed", err);
       results.dedup = "failed";
     }
 
+    log.info("cron", "manual run all complete", results);
     return NextResponse.json({ ok: true, results });
   }
 
   if (job === "email") {
+    log.info("cron", "manual run email");
     requestEmailImport(session, { manual: true });
-    return NextResponse.json({ ok: true, job: "email", status: "started" });
+    return NextResponse.json({ ok: true, job: "email", status: "started (background)" });
   }
 
   if (job === "dedup") {
+    log.info("cron", "manual run dedup");
     await runDuplicateDetection(session);
     return NextResponse.json({ ok: true, job: "dedup", status: "done" });
   }

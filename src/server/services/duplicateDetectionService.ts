@@ -17,32 +17,41 @@ function isAiUnavailableError(err: unknown): boolean {
 }
 
 export async function runDuplicateDetection(session: SheetSession): Promise<void> {
+  log.info("dedup", "started");
   const transactions = await getAllTransactions(session.accessToken, session.sheetId);
+  log.info("dedup", `scanning ${transactions.length} transactions`);
+
   const previousDuplicates = transactions.filter((tx) => tx.is_duplicate);
-
-  await Promise.all(
-    previousDuplicates.map((tx) =>
-      updateTransactionField(session.accessToken, session.sheetId, tx.id, {
-        is_duplicate: false,
-        duplicate_ref: undefined,
-      })
-    )
-  );
-
-  const groups = await findDuplicates(transactions);
-
-  await Promise.all(
-    groups.flatMap((group) =>
-      group.duplicate_ids.map((duplicateId) =>
-        updateTransactionField(session.accessToken, session.sheetId, duplicateId, {
-          is_duplicate: true,
-          duplicate_ref: group.original_id,
+  if (previousDuplicates.length > 0) {
+    log.info("dedup", `clearing ${previousDuplicates.length} previous duplicate flags`);
+    await Promise.all(
+      previousDuplicates.map((tx) =>
+        updateTransactionField(session.accessToken, session.sheetId, tx.id, {
+          is_duplicate: false,
+          duplicate_ref: undefined,
         })
       )
-    )
-  );
+    );
+  }
+
+  const groups = await findDuplicates(transactions);
+  log.info("dedup", `found ${groups.length} duplicate group(s)`);
+
+  if (groups.length > 0) {
+    await Promise.all(
+      groups.flatMap((group) =>
+        group.duplicate_ids.map((duplicateId) =>
+          updateTransactionField(session.accessToken, session.sheetId, duplicateId, {
+            is_duplicate: true,
+            duplicate_ref: group.original_id,
+          })
+        )
+      )
+    );
+  }
 
   await setMetaValue(session.accessToken, session.sheetId, "last_dedup_checked_at", new Date().toISOString());
+  log.info("dedup", "done");
 }
 
 export async function requestDuplicateDetection(
