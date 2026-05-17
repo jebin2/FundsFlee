@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Transaction } from "@/types";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -64,6 +64,20 @@ function TransactionsContent() {
   const groups = groupTransactionsByDate(filtered);
   const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
+  // IDs of transactions currently being merged (source=merge, status=merging)
+  // Used to show per-group merging state in the duplicate list and sheet.
+  const mergingSourceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tx of transactions) {
+      if (tx.source === "merge" && tx.status === "merging") {
+        tx.notes?.match(/merge_source:([^\s|]+)/)?.[1]
+          ?.split(",")
+          .forEach((id) => ids.add(id));
+      }
+    }
+    return ids;
+  }, [transactions]);
+
   return (
     <div className="max-w-2xl mx-auto px-5 pt-6 flex flex-col gap-4 overflow-hidden"
       style={{ height: "calc(100dvh - 96px)" }}>
@@ -110,6 +124,7 @@ function TransactionsContent() {
             dupError={dupError}
             onRetry={triggerDupDetect}
             onGroupClick={setActiveDupGroup}
+            mergingSourceIds={mergingSourceIds}
           />
         ) : (
           <>
@@ -180,6 +195,8 @@ function TransactionsContent() {
           onDismissAll={() => dismissGroup(activeDupGroup)}
           onClose={() => setActiveDupGroup(null)}
           onViewTransaction={setSelectedTx}
+          isMerging={[activeDupGroup.original.id, ...activeDupGroup.duplicates.map((d) => d.id)]
+            .some((id) => mergingSourceIds.has(id))}
         />
       )}
     </div>

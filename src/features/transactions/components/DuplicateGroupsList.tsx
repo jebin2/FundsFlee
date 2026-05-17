@@ -10,9 +10,12 @@ interface DuplicateGroupsListProps {
   dupError: string | null;
   onRetry: () => void;
   onGroupClick: (group: DuplicateGroup) => void;
+  mergingSourceIds?: Set<string>;
 }
 
-export function DuplicateGroupsList({ transactions, dupChecking, dupError, onRetry, onGroupClick }: DuplicateGroupsListProps) {
+export function DuplicateGroupsList({
+  transactions, dupChecking, dupError, onRetry, onGroupClick, mergingSourceIds = new Set(),
+}: DuplicateGroupsListProps) {
   if (dupChecking) {
     return (
       <div className="flex flex-col items-center py-16 gap-3">
@@ -49,25 +52,47 @@ export function DuplicateGroupsList({ transactions, dupChecking, dupError, onRet
 
   return (
     <div className="flex flex-col gap-2">
-      {dupGroups.map(({ original: orig, duplicates }) => (
-        <button
-          key={orig.id}
-          onClick={() => onGroupClick({ original: orig, duplicates })}
-          className="flex items-center gap-4 p-4 rounded-2xl text-left w-full"
-          style={{ background: "#fff8f0", border: "1px solid #ffe0b2" }}
-        >
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff3e0" }}>
-            <span className="material-symbols-outlined" style={{ color: "#e65100", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>content_copy</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="truncate font-medium" style={{ color: "var(--color-on-surface)" }}>{orig.item_name || orig.merchant}</p>
-            <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>{orig.date} · {formatINR(orig.amount)}</p>
-          </div>
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full" style={{ background: "#ffcc80" }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#e65100" }}>×{duplicates.length + 1}</span>
-          </div>
-        </button>
-      ))}
+      {dupGroups.map(({ original: orig, duplicates }) => {
+        const allIds = [orig.id, ...duplicates.map((d) => d.id)];
+        const isGroupMerging = allIds.some((id) => mergingSourceIds.has(id));
+
+        return (
+          <button
+            key={orig.id}
+            onClick={() => !isGroupMerging && onGroupClick({ original: orig, duplicates })}
+            disabled={isGroupMerging}
+            className="flex items-center gap-4 p-4 rounded-2xl text-left w-full"
+            style={{
+              background: isGroupMerging ? "var(--color-primary-fixed)" : "#fff8f0",
+              border: `1px solid ${isGroupMerging ? "var(--color-primary-fixed-dim)" : "#ffe0b2"}`,
+              opacity: isGroupMerging ? 1 : 1,
+              cursor: isGroupMerging ? "default" : "pointer",
+            }}
+          >
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
+              style={{ background: isGroupMerging ? "var(--color-primary-fixed-dim)" : "#fff3e0" }}>
+              {isGroupMerging
+                ? <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
+                    style={{ borderColor: "rgba(var(--color-primary-rgb),0.3)", borderTopColor: "var(--color-primary)" }} />
+                : <span className="material-symbols-outlined" style={{ color: "#e65100", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>content_copy</span>
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="truncate font-medium" style={{ color: "var(--color-on-surface)" }}>{orig.item_name || orig.merchant}</p>
+              <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>{orig.date} · {formatINR(orig.amount)}</p>
+            </div>
+            {isGroupMerging
+              ? <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0"
+                  style={{ background: "var(--color-primary-fixed-dim)", color: "var(--color-primary)" }}>
+                  Merging…
+                </span>
+              : <div className="flex items-center gap-1 px-2.5 py-1 rounded-full flex-shrink-0" style={{ background: "#ffcc80" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e65100" }}>×{duplicates.length + 1}</span>
+                </div>
+            }
+          </button>
+        );
+      })}
     </div>
   );
 }
