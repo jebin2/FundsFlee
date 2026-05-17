@@ -26,12 +26,12 @@ function InFlightView({ status }: { status: string }) {
         </span>
       </div>
       <p style={{ fontSize: 18, fontWeight: 600, color: "var(--color-on-surface)" }}>
-        {isMerging ? "Merging duplicates…" : status === "queued" ? "Waiting to process…" : "Reading your receipt…"}
+        {isMerging ? "Merging duplicates…" : status === "queued" ? "Waiting to process…" : "AI is processing…"}
       </p>
       <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)", maxWidth: 280 }}>
         {isMerging
           ? "AI is combining the best data from each duplicate entry."
-          : "AI is extracting details from your receipt. Usually under a minute."}
+          : "AI is reading and extracting details. Usually under a minute."}
       </p>
     </div>
   );
@@ -105,7 +105,14 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
     setRetrying(true);
     try {
       const region = localStorage.getItem("region") ?? "";
-      const res = await receiptsApi.process(tx.id, region);
+      let res: Response;
+      if (tx.source === "sms" || tx.source === "manual") {
+        res = await fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
+      } else if (tx.source === "import") {
+        res = await fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
+      } else {
+        res = await receiptsApi.process(tx.id, region);
+      }
       if (!res.ok) throw new Error("Retry failed — please try again.");
       setTx((prev) => ({ ...prev, status: "processing" }));
       setView("detail");

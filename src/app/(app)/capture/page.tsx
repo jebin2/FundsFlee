@@ -3,10 +3,8 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSmsParser } from "@/features/capture/hooks/useSmsParser";
 import { useReceiptUpload } from "@/features/capture/hooks/useReceiptUpload";
 import { useCameraCapture } from "@/features/capture/hooks/useCameraCapture";
-import { ConfirmForm } from "@/features/capture/components/ConfirmForm";
 import { CameraOverlay } from "@/features/capture/components/CameraOverlay";
 import { UploadStatus } from "@/features/capture/components/UploadStatus";
 import { CameraCapturePanel } from "@/features/capture/components/CameraCapturePanel";
@@ -17,12 +15,14 @@ function CaptureContent() {
   const router = useRouter();
   const isOnline = useOnlineStatus();
   const [tab, setTab] = useState<"paste" | "camera">((searchParams.get("tab") as "paste" | "camera") ?? "paste");
-  // Pre-fill text when arriving from a share target (manifest share_target)
   const sharedText = searchParams.get("text") ?? "";
   const fileRef = useRef<HTMLInputElement>(null);
   const region = typeof window !== "undefined" ? localStorage.getItem("region") ?? "" : "";
 
-  const { text, setText, parsing, parsed, parseError, resetParsed, parseText } = useSmsParser(region, sharedText);
+  const [text, setText] = useState(sharedText);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
   const { uploadState, uploadMsg, handleReceiptFile, resetUpload } = useReceiptUpload(region);
   const { cameraActive, videoRef, startCamera, capturePhoto, stopCamera } = useCameraCapture();
 
@@ -43,7 +43,7 @@ function CaptureContent() {
     }
   }, [handleReceiptFile]);
 
-  // Global paste event — fires when user presses Ctrl+V / Cmd+V or long-presses Paste
+  // Global paste event for images
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
       const target = e.target as HTMLElement;
@@ -61,7 +61,23 @@ function CaptureContent() {
     return () => document.removeEventListener("paste", onPaste);
   }, [handleReceiptFile]);
 
-  if (parsed) return <ConfirmForm parsed={parsed} rawText={text} onBack={resetParsed} />;
+  async function handleLogWithAI() {
+    if (!text.trim() || submitting) return;
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const res = await fetch("/api/parse/text/async", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ text, region }),
+      });
+      if (!res.ok) throw new Error("Failed to submit");
+      router.push("/transactions");
+    } catch {
+      setSubmitError("Could not submit — please try again.");
+      setSubmitting(false);
+    }
+  }
 
   if (cameraActive) return (
     <CameraOverlay
@@ -122,12 +138,17 @@ function CaptureContent() {
 
       {tab === "paste" && (
         <>
-          {parseError && (
+          {submitError && (
             <p className="px-4 py-2 rounded-xl text-sm" style={{ background: "var(--color-error-container)", color: "var(--color-on-error-container)" }}>
-              {parseError}
+              {submitError}
             </p>
           )}
-          <PasteCapturePanel text={text} onTextChange={setText} onParse={parseText} parsing={parsing} />
+          <PasteCapturePanel
+            text={text}
+            onTextChange={setText}
+            onParse={handleLogWithAI}
+            parsing={submitting}
+          />
         </>
       )}
 

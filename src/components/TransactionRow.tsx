@@ -48,8 +48,16 @@ export function TransactionRow({ tx, hasSuggestions, onSuggestionsClick, onClick
     ? "AI merging duplicates…"
     : tx.status === "merge_failed"
     ? "Merge failed — tap to retry"
+    : isInFlight && tx.source === "sms"
+    ? "Parsing SMS…"
+    : isInFlight && tx.source === "import"
+    ? "Reading bank statement…"
     : isInFlight
     ? "Reading receipt…"
+    : isFailed && tx.source === "sms"
+    ? "SMS parse failed — tap to retry"
+    : isFailed && tx.source === "import"
+    ? "Statement parse failed — tap to retry"
     : isFailed
     ? "Receipt — parse failed"
     : (tx.item_name || tx.merchant);

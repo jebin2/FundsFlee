@@ -131,6 +131,17 @@ export async function getAnalysisFromDrive(
   return Buffer.from(res.data as ArrayBuffer).toString("utf-8");
 }
 
+// Return all cache rows with a given status (used by cron retry)
+export async function getAnalysisCacheRowsByStatus(
+  accessToken: string,
+  sheetId: string,
+  status: AnalysisCacheStatus
+): Promise<CachedAnalysis[]> {
+  const sheets = getSheetsClient(accessToken);
+  const rows = await readAnalysisCacheRows(sheets, sheetId);
+  return rows.filter((r) => r[5] === status).map(rowToCachedAnalysis);
+}
+
 // Keep backward-compat alias used in a few places
 export async function saveAnalysisCache(
   accessToken: string,

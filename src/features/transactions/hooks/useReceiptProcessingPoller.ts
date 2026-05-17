@@ -4,6 +4,18 @@ import { useEffect, useRef, useCallback } from "react";
 import type { Transaction } from "@/types";
 import { receiptsApi } from "@/lib/api/receipts";
 
+// Dispatch a queued transaction to the correct background processor based on source.
+async function processTransaction(tx: Transaction, region: string): Promise<void> {
+  if (tx.source === "sms" || tx.source === "manual") {
+    await fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
+  } else if (tx.source === "import") {
+    await fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
+  } else {
+    // receipt (default)
+    await receiptsApi.process(tx.id, region);
+  }
+}
+
 export function useReceiptProcessingPoller(
   transactions: Transaction[],
   isOnline: boolean,
@@ -18,7 +30,7 @@ export function useReceiptProcessingPoller(
       const queued = txs.filter((t) => t.status === "queued" && !processingRef.current.has(t.id));
       for (const tx of queued) {
         processingRef.current.add(tx.id);
-        receiptsApi.process(tx.id, region).catch(() => processingRef.current.delete(tx.id));
+        processTransaction(tx, region).catch(() => processingRef.current.delete(tx.id));
       }
     },
     [region]

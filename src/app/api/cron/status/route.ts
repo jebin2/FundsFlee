@@ -5,6 +5,11 @@ import { cronSessionExists } from "@/lib/cron/cronStore";
 
 export const GET = withSession("GET cron/status", async (session) => {
   const meta = await getMetaValues(session.accessToken, session.sheetId);
+  const dedupRunningAt = meta.dedup_running_at || null;
+  const dedupStillRunning = dedupRunningAt
+    ? Date.now() - new Date(dedupRunningAt).getTime() < 5 * 60 * 1000
+    : false;
+
   return NextResponse.json({
     registered:    cronSessionExists(),
     email: {
@@ -15,6 +20,7 @@ export const GET = withSession("GET cron/status", async (session) => {
     },
     dedup: {
       lastRun:     meta.last_dedup_checked_at ?? null,
+      runningAt:   dedupStillRunning ? dedupRunningAt : null,
     },
     schedule:      "12:00 IST daily",
   });

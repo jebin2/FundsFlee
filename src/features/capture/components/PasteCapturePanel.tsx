@@ -26,9 +26,9 @@ export function PasteCapturePanel({ text, onTextChange, onParse, parsing }: Past
         style={{ background: "var(--color-primary)", color: "#fff", fontSize: 16, opacity: parsing || !text.trim() ? 0.6 : 1 }}
       >
         {parsing ? (
-          <><div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "rgba(255,255,255,0.4)", borderTopColor: "#fff" }} />Parsing…</>
+          <><div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "rgba(255,255,255,0.4)", borderTopColor: "#fff" }} />Saving…</>
         ) : (
-          <><span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>Parse with AI</>
+          <><span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>Log with AI</>
         )}
       </button>
 

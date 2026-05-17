@@ -3,6 +3,10 @@ import { loadCronSession } from "./cronStore";
 import { runEmailImportJob } from "@/server/jobs/emailImportJob";
 import { runDuplicateDetection } from "@/server/services/duplicateDetectionService";
 import { retryFailedMerges } from "@/server/jobs/mergeJob";
+import { runAnalysisJob } from "@/server/jobs/analysisJob";
+import { runComparisonJob } from "@/server/jobs/comparisonJob";
+import { getAnalysisCacheRowsByStatus } from "@/lib/sheets/analysis-cache";
+import { getMetaValues } from "@/lib/sheets";
 import { log } from "@/lib/logger";
 import { refreshGoogleToken } from "@/lib/googleAuth";
 
@@ -48,11 +52,40 @@ export async function runDailyJobs(): Promise<{ email: string; dedup: string }> 
     dedupResult = "failed";
   }
 
-  // ── 3. Retry any failed merges ────────────────────────────────────────────
+  // ── 3. Retry failed merges ────────────────────────────────────────────────
   try {
     await retryFailedMerges(session);
   } catch (err) {
     log.error("cron", "merge retry pass failed", err);
+  }
+
+  // ── 4. Retry failed analyses ──────────────────────────────────────────────
+  try {
+    const meta = await getMetaValues(session.accessToken, session.sheetId);
+    const region = meta.region ?? "";
+    const lifestyleTags: string[] = meta.lifestyle_tags ? JSON.parse(meta.lifestyle_tags) : [];
+    const failedAnalyses = await getAnalysisCacheRowsByStatus(session.accessToken, session.sheetId, "failed");
+    for (const row of failedAnalyses) {
+      if (row.period.startsWith("compare_")) {
+        // Comparison cache row — extract merchants and period from the key
+        const parts = row.period.replace("compare_", "").split("_");
+        const period = parts.pop() ?? "month";
+        const merchants = parts.join("_").split("|");
+        if (merchants.length >= 2) {
+          log.info("cron", `retrying failed comparison: ${row.period}`);
+          await runComparisonJob(session, merchants, period, region).catch((err) =>
+            log.error("cron", "comparison retry failed", { period: row.period, err })
+          );
+        }
+      } else {
+        log.info("cron", `retrying failed analysis: ${row.period}`);
+        await runAnalysisJob(session, row.period, region, lifestyleTags).catch((err) =>
+          log.error("cron", "analysis retry failed", { period: row.period, err })
+        );
+      }
+    }
+  } catch (err) {
+    log.error("cron", "analysis/compare retry pass failed", err);
   }
 
   return { email: emailResult, dedup: dedupResult };
