@@ -66,8 +66,10 @@ function TransactionsContent() {
   const inFlightCount = transactions.filter((t) => t.status === "queued" || t.status === "processing").length;
 
   return (
-    <div className="max-w-2xl mx-auto px-5 pt-6 pb-8 flex flex-col gap-4">
-      <div className="hidden md:flex items-center justify-between">
+    <div className="max-w-2xl mx-auto px-5 pt-6 flex flex-col gap-4 overflow-hidden"
+      style={{ height: "calc(100dvh - 96px)" }}>
+
+      <div className="hidden md:flex items-center justify-between flex-shrink-0">
         <h1 className="font-bold" style={{ fontSize: 24, color: "var(--color-on-background)" }}>Transactions</h1>
         {total > 0 && (
           <span style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>
@@ -76,82 +78,88 @@ function TransactionsContent() {
         )}
       </div>
 
-      <InFlightReceiptBanner count={inFlightCount} />
+      <div className="flex-shrink-0">
+        <InFlightReceiptBanner count={inFlightCount} />
+      </div>
 
-      <TransactionFilters
-        search={search} onSearchChange={setSearch}
-        filterCat={filterCat} onCatChange={setFilterCat}
-        showDupsOnly={showDupsOnly}
-        onDupsToggle={() => { const next = !showDupsOnly; setShowDupsOnly(next); if (next) triggerDupDetect(); }}
-        dupChecking={dupChecking}
-        datePreset={datePreset} onDatePresetChange={setDatePreset}
-        customFrom={customFrom} onCustomFromChange={setCustomFrom}
-        customTo={customTo} onCustomToChange={setCustomTo}
-        categories={categories}
-      />
-
-      {loading && transactions.length === 0 ? (
-        <div className="flex flex-col gap-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-16 rounded-2xl animate-pulse" style={{ background: "var(--color-surface-container)" }} />
-          ))}
-        </div>
-      ) : showDupsOnly ? (
-        <DuplicateGroupsList
-          transactions={transactions}
+      <div className="flex-shrink-0">
+        <TransactionFilters
+          search={search} onSearchChange={setSearch}
+          filterCat={filterCat} onCatChange={setFilterCat}
+          showDupsOnly={showDupsOnly}
+          onDupsToggle={() => { const next = !showDupsOnly; setShowDupsOnly(next); if (next) triggerDupDetect(); }}
           dupChecking={dupChecking}
-          dupError={dupError}
-          onRetry={triggerDupDetect}
-          onGroupClick={setActiveDupGroup}
+          datePreset={datePreset} onDatePresetChange={setDatePreset}
+          customFrom={customFrom} onCustomFromChange={setCustomFrom}
+          customTo={customTo} onCustomToChange={setCustomTo}
+          categories={categories}
         />
-      ) : (
-        <>
-          <ErrorBoundary>
-          <TransactionGroups
-            sortedDates={sortedDates}
-            groups={groups}
-            suggestions={suggestions}
-            onSuggestionsClick={setActiveSuggTxId}
-            onTransactionClick={setSelectedTx}
-            onResolveDuplicate={resolveDuplicate}
-            searchActive={!!search}
-            onRetryReceipt={async (txId) => {
-              await receiptsApi.process(txId, region);
-              loadData();
-            }}
+      </div>
+
+      {/* Scrollable list — fills remaining height */}
+      <div className="flex-1 min-h-0 overflow-y-auto pb-4">
+        {loading && transactions.length === 0 ? (
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-16 rounded-2xl animate-pulse" style={{ background: "var(--color-surface-container)" }} />
+            ))}
+          </div>
+        ) : showDupsOnly ? (
+          <DuplicateGroupsList
+            transactions={transactions}
+            dupChecking={dupChecking}
+            dupError={dupError}
+            onRetry={triggerDupDetect}
+            onGroupClick={setActiveDupGroup}
           />
+        ) : (
+          <>
+            <ErrorBoundary>
+              <TransactionGroups
+                sortedDates={sortedDates}
+                groups={groups}
+                suggestions={suggestions}
+                onSuggestionsClick={setActiveSuggTxId}
+                onTransactionClick={setSelectedTx}
+                onResolveDuplicate={resolveDuplicate}
+                searchActive={!!search}
+                onRetryReceipt={async (txId) => {
+                  await receiptsApi.process(txId, region);
+                  loadData();
+                }}
+              />
+            </ErrorBoundary>
 
-          </ErrorBoundary>
-
-          {/* Load more — only shown when no active filters (filters work on loaded data) */}
-          {hasMore && !search && !filterCat && !datePreset && !showDupsOnly && (
-            <button
-              onClick={loadMore}
-              disabled={loadingMore || syncing}
-              className="w-full py-3.5 rounded-2xl font-medium flex items-center justify-center gap-2"
-              style={{
-                background: "var(--color-surface-container)",
-                color: "var(--color-on-surface-variant)",
-                fontSize: 14,
-                opacity: loadingMore || syncing ? 0.6 : 1,
-              }}
-            >
-              {loadingMore ? (
-                <>
-                  <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
-                    style={{ borderColor: "var(--color-outline)", borderTopColor: "var(--color-on-surface-variant)" }} />
-                  Loading…
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>expand_more</span>
-                  Load older transactions ({total - transactions.length} more)
-                </>
-              )}
-            </button>
-          )}
-        </>
-      )}
+            {/* Load more */}
+            {hasMore && !search && !filterCat && !datePreset && !showDupsOnly && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore || syncing}
+                className="w-full py-3.5 rounded-2xl font-medium flex items-center justify-center gap-2 mt-4"
+                style={{
+                  background: "var(--color-surface-container)",
+                  color: "var(--color-on-surface-variant)",
+                  fontSize: 14,
+                  opacity: loadingMore || syncing ? 0.6 : 1,
+                }}
+              >
+                {loadingMore ? (
+                  <>
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                      style={{ borderColor: "var(--color-outline)", borderTopColor: "var(--color-on-surface-variant)" }} />
+                    Loading…
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>expand_more</span>
+                    Load older transactions ({total - transactions.length} more)
+                  </>
+                )}
+              </button>
+            )}
+          </>
+        )}
+      </div>
 
       {activeSuggTxId && (
         <SuggestionsSheet
