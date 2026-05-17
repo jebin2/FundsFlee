@@ -27,9 +27,11 @@ export default function ShortcutSettingsPage() {
 
   function installShortcut() {
     if (!token) return;
-    const fileUrl    = `${window.location.origin}/api/shortcut/file?token=${encodeURIComponent(token)}`;
-    const installUrl = `shortcuts://import-shortcut?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent("Log to FundsFlee")}`;
-    window.location.href = installUrl;
+    const fileUrl = `${window.location.origin}/api/shortcut/file?token=${encodeURIComponent(token)}`;
+    // Open the file URL directly in Safari — iOS recognises .shortcut files
+    // and prompts "Open in Shortcuts" automatically. The shortcuts:// URL scheme
+    // is unreliable from a PWA and shows "URL invalid" errors on some iOS versions.
+    window.open(fileUrl, "_blank");
   }
 
   const masked = token ? `${token.slice(0, 8)}••••••••••••${token.slice(-4)}` : "Loading…";
@@ -92,7 +94,7 @@ export default function ShortcutSettingsPage() {
             {token ? "Install Shortcut" : "Loading…"}
           </button>
           <p style={{ fontSize: 12, color: "var(--color-on-surface-variant)", textAlign: "center" }}>
-            Opens the Shortcuts app and installs it automatically — your token is pre-configured, no setup needed.
+            Downloads the shortcut file — tap &quot;Open in Shortcuts&quot; when Safari prompts you, then tap &quot;Add Shortcut&quot;.
           </p>
         </div>
 

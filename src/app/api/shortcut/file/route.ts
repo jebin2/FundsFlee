@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
 
   return new NextResponse(new Uint8Array(buf), {
     headers: {
-      "Content-Type":        "application/octet-stream",
+      "Content-Type":        "application/x-apple-shortcut",
       "Content-Disposition": 'attachment; filename="FundsFlee.shortcut"',
       "Content-Length":      String(buf.length),
       // Don't cache — token may be rotated
