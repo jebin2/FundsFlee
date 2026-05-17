@@ -6,9 +6,31 @@ import { retryFailedMerges } from "@/server/jobs/mergeJob";
 import { runAnalysisJob } from "@/server/jobs/analysisJob";
 import { runComparisonJob } from "@/server/jobs/comparisonJob";
 import { getAnalysisCacheRowsByStatus } from "@/lib/sheets/analysis-cache";
-import { getMetaValues } from "@/lib/sheets";
+import { getAllTransactions, updateTransactionField, getMetaValues } from "@/lib/sheets";
 import { log } from "@/lib/logger";
 import { refreshGoogleToken } from "@/lib/googleAuth";
+import type { SheetSession } from "@/server/services/types";
+
+const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+// Mark transactions stuck in "processing" or "merging" as failed.
+// A restart mid-job leaves these statuses permanently set — the cron cleans them up.
+async function cleanupStuckTransactions(session: SheetSession): Promise<void> {
+  const all = await getAllTransactions(session.accessToken, session.sheetId);
+  const now = Date.now();
+  const stuck = all.filter((t) => {
+    if (t.status !== "processing" && t.status !== "merging") return false;
+    const age = now - new Date(t.updated_at || t.created_at).getTime();
+    return age >= STUCK_THRESHOLD_MS;
+  });
+  if (stuck.length === 0) return;
+  log.info("cron", `cleanup: marking ${stuck.length} stuck transaction(s) as failed`);
+  for (const tx of stuck) {
+    const failedStatus = tx.status === "merging" ? "merge_failed" : "failed";
+    await updateTransactionField(session.accessToken, session.sheetId, tx.id, { status: failedStatus })
+      .catch((err) => log.error("cron", "cleanup: failed to mark tx", { id: tx.id, err }));
+  }
+}
 
 export async function runDailyJobs(): Promise<{ email: string; dedup: string }> {
   const stored = loadCronSession();
@@ -29,6 +51,13 @@ export async function runDailyJobs(): Promise<{ email: string; dedup: string }> 
     sheetId: stored.sheetId,
     userEmail: stored.userEmail,
   };
+
+  // ── 0. Cleanup stuck transactions from previous server run ───────────────
+  try {
+    await cleanupStuckTransactions(session);
+  } catch (err) {
+    log.error("cron", "stuck-tx cleanup failed", err);
+  }
 
   // ── 1. Email import ───────────────────────────────────────────────────────
   let emailResult = "ok";
@@ -60,7 +89,7 @@ export async function runDailyJobs(): Promise<{ email: string; dedup: string }> 
   }
 
   // ── 4. Analysis — week, month, year (sequential) ──────────────────────────
-  const meta = await getMetaValues(session.accessToken, session.sheetId).catch(() => ({} as Record<string, string>));
+  const meta = await getMetaValues(session.accessToken, session.sheetId).catch(() => ({}) as Record<string, string>);
   const region = meta.region ?? "";
   const lifestyleTags: string[] = meta.lifestyle_tags ? JSON.parse(meta.lifestyle_tags ?? "[]") : [];
 

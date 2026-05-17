@@ -212,7 +212,26 @@ export default function ScheduledSettingsPage() {
           </div>
         </div>
 
-        {/* Stuck dedup warning — shown when dedup appears running but has a prior lastRun (server-restart leak) */}
+        {/* Stuck email warning */}
+        {!loading && emailServerRunning && status?.email.lastRun && (
+          <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
+            <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#f9a825", fontSize: 18 }}>warning</span>
+            <p style={{ fontSize: 13, color: "#6d4c00", flex: 1 }}>
+              Email import appears stuck — possibly caused by a server restart. Tap to clear.
+            </p>
+            <button
+              onClick={async () => {
+                await fetch("/api/cron/clear?job=email", { method: "POST" });
+                await fetchStatus();
+              }}
+              className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium"
+              style={{ background: "#fff3cd", color: "#6d4c00", border: "1px solid #ffe082" }}>
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Stuck dedup warning */}
         {!loading && dedupServerRunning && status?.dedup.lastRun && (
           <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#f9a825", fontSize: 18 }}>warning</span>
@@ -221,7 +240,7 @@ export default function ScheduledSettingsPage() {
             </p>
             <button
               onClick={async () => {
-                await fetch("/api/cron/clear", { method: "POST" });
+                await fetch("/api/cron/clear?job=dedup", { method: "POST" });
                 await fetchStatus();
               }}
               className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium"
