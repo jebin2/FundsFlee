@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, Suspense } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSmsParser } from "@/features/capture/hooks/useSmsParser";
@@ -25,6 +25,41 @@ function CaptureContent() {
   const { text, setText, parsing, parsed, parseError, resetParsed, parseText } = useSmsParser(region, sharedText);
   const { uploadState, uploadMsg, handleReceiptFile, resetUpload } = useReceiptUpload(region);
   const { cameraActive, videoRef, startCamera, capturePhoto, stopCamera } = useCameraCapture();
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          handleReceiptFile(new File([blob], "pasted.png", { type: imageType }));
+          return;
+        }
+      }
+      alert("No image found in clipboard. Copy an image first, then tap Paste Image.");
+    } catch {
+      alert("Could not read clipboard. On iOS, copy an image then use Paste Image.");
+    }
+  }, [handleReceiptFile]);
+
+  // Global paste event — fires when user presses Ctrl+V / Cmd+V or long-presses Paste
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) { handleReceiptFile(file); break; }
+        }
+      }
+    }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [handleReceiptFile]);
 
   if (parsed) return <ConfirmForm parsed={parsed} rawText={text} onBack={resetParsed} />;
 
@@ -81,6 +116,7 @@ function CaptureContent() {
         <CameraCapturePanel
           onStartCamera={handleStartCamera}
           onPickFromGallery={() => fileRef.current?.click()}
+          onPasteImage={handlePasteImage}
         />
       )}
 

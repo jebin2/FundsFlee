@@ -1,9 +1,10 @@
 interface CameraCapturePanelProps {
   onStartCamera: () => void;
   onPickFromGallery: () => void;
+  onPasteImage: () => void;
 }
 
-export function CameraCapturePanel({ onStartCamera, onPickFromGallery }: CameraCapturePanelProps) {
+export function CameraCapturePanel({ onStartCamera, onPickFromGallery, onPasteImage }: CameraCapturePanelProps) {
   return (
     <>
       <div
@@ -18,14 +19,24 @@ export function CameraCapturePanel({ onStartCamera, onPickFromGallery }: CameraC
         <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>Point at a receipt or bill</p>
       </div>
 
-      <button
-        onClick={onPickFromGallery}
-        className="w-full py-3 rounded-2xl font-medium flex items-center justify-center gap-2"
-        style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 14 }}
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>photo_library</span>
-        Upload from gallery
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={onPickFromGallery}
+          className="flex-1 py-3 rounded-2xl font-medium flex items-center justify-center gap-2"
+          style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 14 }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>photo_library</span>
+          Gallery
+        </button>
+        <button
+          onClick={onPasteImage}
+          className="flex-1 py-3 rounded-2xl font-medium flex items-center justify-center gap-2"
+          style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 14 }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>content_paste</span>
+          Paste Image
+        </button>
+      </div>
 
       <div className="rounded-2xl p-4 flex flex-col gap-2" style={{ background: "var(--color-primary-fixed)" }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-primary)" }}>How it works</p>
