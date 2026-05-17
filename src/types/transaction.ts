@@ -28,8 +28,9 @@ export interface Transaction {
   receipt_url?: string;     // col V — Google Drive link to original image
   receipt_id?: string;      // col W — groups all items from the same scanned receipt
   quantity?: string;        // col X — e.g. "500g", "1kg", "2 pcs"
-  deleted?: boolean;        // col Y — soft delete flag
+  deleted?: boolean;         // col Y — soft delete flag
   recurrence?: RecurrencePeriod; // col Z — recurring transaction period
+  merge_id?: string;         // col AA — shared ID linking merged tx + its sources
 }
 
 export interface QueueItem {

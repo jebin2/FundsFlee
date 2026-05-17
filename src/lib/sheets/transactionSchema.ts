@@ -29,9 +29,10 @@ export const COLS = {
   quantity:          { index: 23, letter: "X" },
   deleted:           { index: 24, letter: "Y" },
   recurrence:        { index: 25, letter: "Z" },
+  merge_id:          { index: 26, letter: "AA" },
 } as const;
 
-export const LAST_COL = COLS.recurrence.letter;
+export const LAST_COL = COLS.merge_id.letter;
 export const ID_RANGE = "transactions!A2:A5000";
 export const DATA_RANGE = (limit: number) => `transactions!A2:${LAST_COL}${limit + 1}`;
 
@@ -48,6 +49,7 @@ export function transactionToRow(tx: Transaction): unknown[] {
     tx.status ?? "done", tx.receipt_url ?? "", tx.receipt_id ?? "", tx.quantity ?? "",
     tx.deleted ? "TRUE" : "",
     tx.recurrence ?? "",
+    tx.merge_id ?? "",
   ];
 }
 
@@ -81,6 +83,7 @@ export function rowToTransaction(r: string[]): Transaction {
     receipt_id:        row[c.receipt_id.index] || undefined,
     quantity:          row[c.quantity.index] || undefined,
     recurrence:        (row[c.recurrence.index] as RecurrencePeriod) || undefined,
+    merge_id:          row[c.merge_id.index] || undefined,
   };
 }
 

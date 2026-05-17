@@ -66,6 +66,10 @@ export async function runMergeJob(
       const now = new Date().toISOString();
       const receiptSource = sources.find((s) => s.source === "receipt");
 
+      // merge_id is shared by the merged result AND all source transactions
+      // so you can always trace which entries were combined.
+      const mergeId = placeholderId;
+
       await updateTransactionField(session.accessToken, session.sheetId, placeholderId, {
         date:           merged.date           ?? sources[0].date,
         time:           merged.time           ?? sources[0].time,
@@ -81,14 +85,16 @@ export async function runMergeJob(
         source:         "merge",
         is_duplicate:   false,
         duplicate_ref:  undefined,
+        merge_id:       mergeId,
         status:         "done",
         updated_at:     now,
       });
 
-      // Soft-delete all source transactions
+      // Soft-delete all source transactions and stamp them with the same merge_id
       for (const src of sources) {
         await updateTransactionField(session.accessToken, session.sheetId, src.id, {
-          deleted: true,
+          deleted:  true,
+          merge_id: mergeId,
         });
       }
 
