@@ -15,8 +15,8 @@ import {
 export const PAGE_SIZE = 200;
 
 // In-memory row-index cache: sheetId → Map<txId, 1-based sheet row number>
-// Invalidated whenever a row is appended (row numbers shift for nothing — appends
-// add to the end, so existing row numbers remain valid; only invalidate on delete).
+// Invalidated on append (new row not in cache) and on soft-delete (row IDs shift
+// logically). Existing row numbers for un-deleted rows remain valid across appends.
 const rowIndexCache = new Map<string, Map<string, number>>();
 
 async function getRowIndexMap(
@@ -85,6 +85,8 @@ export async function appendTransaction(
       requestBody: { values: [transactionToRow(tx)] },
     })
   );
+  // New row is not in the cache — force rebuild on next updateTransactionField call.
+  invalidateRowIndex(sheetId);
 }
 
 // Fetch one page of transactions, working backwards from the end of the sheet.
