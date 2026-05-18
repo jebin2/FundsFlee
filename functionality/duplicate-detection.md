@@ -36,6 +36,8 @@ Tap a card to open the details:
 - **Merge into one** — AI picks the best data from each entry and combines them into one clean transaction
 - **Keep all** — marks the group as intentional, not a duplicate
 
+In the **All** tab, each duplicate entry also shows inline **Keep** and **Remove** buttons beneath it. If you manually delete a transaction (via its detail sheet) that other entries were flagged against, those entries are automatically cleaned up — their duplicate flags are cleared so the Keep/Remove buttons no longer appear.
+
 ---
 
 ## Cooldown
