@@ -16,7 +16,7 @@ In the Transactions list, tap the **Duplicates** chip to see grouped duplicates.
 
 2. In the background, AI looks at all the duplicate entries and builds one merged transaction using the best available information — the clearest merchant name, the correct amount, the most complete notes, and any receipt image.
 
-3. When done, the "Merging…" placeholder is replaced by the finished merged transaction. The original duplicate entries are removed from view.
+3. When done, the "Merging…" placeholder is reliably replaced by the finished merged transaction and the original duplicate entries are removed from view. (Previously, the placeholder could stay stuck at "Merging…" even after the AI finished — this is now fixed.)
 
 4. If merging fails, an error indicator appears on the placeholder. The app tries again up to three times automatically, and also retries once per day overnight.
 

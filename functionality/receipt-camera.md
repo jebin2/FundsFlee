@@ -23,7 +23,7 @@ Open the **Capture** screen and switch to the **Camera** tab. Choose how you wan
 
 4. In the background, AI scans the receipt — using the same prompt and parsing flow as text capture — and extracts each line item: name, quantity, unit, unit price, and total, along with the merchant name and categories.
 
-5. When finished, one of two things happens:
+5. When finished, the result is reliably written to your sheet. One of two things happens:
    - **Multiple items** — the placeholder disappears and each item becomes its own transaction entry. If the receipt total is higher than the sum of line item prices (due to taxes or fees), an extra **"Taxes & Fees"** row is appended for the difference. All rows from the same receipt share a common receipt ID so they can always be traced back together.
    - **Single item** — the placeholder is updated in place with the item details (name, quantity, category).
 

@@ -20,7 +20,7 @@ You can also share a message directly from your phone's Messages app — tap Sha
 
 3. In the background, AI reads the message and extracts the transaction details: date, time, amount, merchant, category, payment method, notes, and any individual line items with their quantities.
 
-4. When done, one of two things happens depending on how many items were found:
+4. When done, the transaction is reliably updated in your sheet. One of two things happens depending on how many items were found:
    - **Single item or no items** — the placeholder is updated in place with all extracted details, including item name and quantity if available.
    - **Multiple items** — the placeholder is removed and each item becomes its own separate transaction entry with its individual price, name, and quantity. If the grand total is higher than the sum of item prices (due to taxes, marketplace fees, or delivery charges), an extra **"Taxes & Fees"** row is added automatically for the difference. All rows from the same order share a common order ID so they can always be traced back together.
 
