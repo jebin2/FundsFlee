@@ -34,10 +34,11 @@ function isRecentlyRunning(runningAt: string | null): boolean {
 
 export default function ScheduledSettingsPage() {
   const router = useRouter();
-  const [status,     setStatus]     = useState<CronStatus | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [triggering, setTriggering] = useState<"all" | "email" | "dedup" | "analysis" | null>(null);
-  const [lastMsg,    setLastMsg]    = useState<string | null>(null);
+  const [status,      setStatus]     = useState<CronStatus | null>(null);
+  const [loading,     setLoading]    = useState(true);
+  const [triggering,  setTriggering] = useState<"all" | "email" | "dedup" | "analysis" | null>(null);
+  const [cancelling,  setCancelling] = useState<"email" | "dedup" | "analysis" | null>(null);
+  const [lastMsg,     setLastMsg]    = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = useCallback(async (): Promise<CronStatus | null> => {
@@ -104,7 +105,6 @@ export default function ScheduledSettingsPage() {
           "Jobs complete."
         );
         const s = await fetchStatus();
-        // Start polling if anything is now running server-side
         if (s && (isRecentlyRunning(s.email.runningAt) || isRecentlyRunning(s.dedup.runningAt))) {
           startPolling();
         }
@@ -115,6 +115,19 @@ export default function ScheduledSettingsPage() {
       setLastMsg("Network error — please try again.");
     } finally {
       setTriggering(null);
+    }
+  }
+
+  async function cancel(job: "email" | "dedup" | "analysis") {
+    setCancelling(job);
+    try {
+      await fetch(`/api/cron/clear?job=${job}`, { method: "POST" });
+      await fetchStatus();
+      stopPolling();
+    } catch {
+      // best-effort
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -170,15 +183,7 @@ export default function ScheduledSettingsPage() {
     },
   ];
 
-  const runAllLabel = triggering === "all"
-    ? "Running…"
-    : emailServerRunning
-    ? "Email running…"
-    : dedupServerRunning
-    ? "Dedup running…"
-    : analysisServerRunning
-    ? "Analysis running…"
-    : "Run All Jobs Now";
+  const runAllLabel = isAnyRunning ? "Running…" : "Run All Jobs Now";
 
   return (
     <div className="max-w-lg mx-auto px-5 pb-10">
@@ -212,44 +217,6 @@ export default function ScheduledSettingsPage() {
           </div>
         </div>
 
-        {/* Stuck email warning */}
-        {!loading && emailServerRunning && status?.email.lastRun && (
-          <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
-            <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#f9a825", fontSize: 18 }}>warning</span>
-            <p style={{ fontSize: 13, color: "#6d4c00", flex: 1 }}>
-              Email import appears stuck — possibly caused by a server restart. Tap to clear.
-            </p>
-            <button
-              onClick={async () => {
-                await fetch("/api/cron/clear?job=email", { method: "POST" });
-                await fetchStatus();
-              }}
-              className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium"
-              style={{ background: "#fff3cd", color: "#6d4c00", border: "1px solid #ffe082" }}>
-              Clear
-            </button>
-          </div>
-        )}
-
-        {/* Stuck dedup warning */}
-        {!loading && dedupServerRunning && status?.dedup.lastRun && (
-          <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
-            <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#f9a825", fontSize: 18 }}>warning</span>
-            <p style={{ fontSize: 13, color: "#6d4c00", flex: 1 }}>
-              Duplicate check appears stuck — possibly caused by a server restart. Tap to clear.
-            </p>
-            <button
-              onClick={async () => {
-                await fetch("/api/cron/clear?job=dedup", { method: "POST" });
-                await fetchStatus();
-              }}
-              className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium"
-              style={{ background: "#fff3cd", color: "#6d4c00", border: "1px solid #ffe082" }}>
-              Clear
-            </button>
-          </div>
-        )}
-
         {/* Not registered warning */}
         {!loading && !status?.registered && (
           <div className="rounded-2xl p-3 flex gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
@@ -271,8 +238,9 @@ export default function ScheduledSettingsPage() {
         {/* Job rows */}
         <div className="rounded-3xl overflow-hidden border" style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
           {jobs.map((job, i) => {
-            const isRunning = job.serverRunning || triggering === job.key || triggering === "all";
-            const disabled  = isAnyRunning || !job.enabled;
+            const isRunning    = job.serverRunning || triggering === job.key || triggering === "all";
+            const isCancelling = cancelling === job.key;
+            const runDisabled  = !!triggering || isAnyRunning || !job.enabled;
 
             return (
               <div key={job.key} className="flex items-center gap-4 px-5 py-4"
@@ -298,23 +266,39 @@ export default function ScheduledSettingsPage() {
                     Last run: {relativeTime(job.lastRun)}
                   </p>
                 </div>
-                <button
-                  onClick={() => trigger(job.key)}
-                  disabled={disabled}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
-                  style={{
-                    background: job.enabled ? job.bg : "var(--color-surface-container)",
-                    color:      job.enabled ? job.color : "var(--color-outline)",
-                    opacity:    disabled ? 0.4 : 1,
-                    cursor:     disabled ? "not-allowed" : "pointer",
-                  }}>
-                  {isRunning
-                    ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
-                        style={{ borderColor: `${job.color}40`, borderTopColor: job.color }} />
-                    : <span className="material-symbols-outlined" style={{ fontSize: 15 }}>play_arrow</span>
-                  }
-                  {isRunning ? "Running" : "Run"}
-                </button>
+                {isRunning ? (
+                  <button
+                    onClick={() => cancel(job.key as "email" | "dedup" | "analysis")}
+                    disabled={isCancelling}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
+                    style={{
+                      background: "#fdecea",
+                      color:      "#c62828",
+                      opacity:    isCancelling ? 0.5 : 1,
+                      cursor:     isCancelling ? "not-allowed" : "pointer",
+                    }}>
+                    {isCancelling
+                      ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
+                          style={{ borderColor: "#c6282840", borderTopColor: "#c62828" }} />
+                      : <span className="material-symbols-outlined" style={{ fontSize: 15 }}>stop_circle</span>
+                    }
+                    {isCancelling ? "…" : "Cancel"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => trigger(job.key)}
+                    disabled={runDisabled}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
+                    style={{
+                      background: job.enabled ? job.bg : "var(--color-surface-container)",
+                      color:      job.enabled ? job.color : "var(--color-outline)",
+                      opacity:    runDisabled ? 0.4 : 1,
+                      cursor:     runDisabled ? "not-allowed" : "pointer",
+                    }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 15 }}>play_arrow</span>
+                    Run
+                  </button>
+                )}
               </div>
             );
           })}

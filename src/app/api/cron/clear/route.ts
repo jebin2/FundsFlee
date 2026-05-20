@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
-import { setMetaValue } from "@/lib/sheets";
+import { setMetaValue, upsertAnalysisCacheRow } from "@/lib/sheets";
 
-// POST /api/cron/clear?job=email|dedup|all
-// Clears stuck running-at flags left by a server restart.
-// Defaults to clearing both when no job param is provided.
+// POST /api/cron/clear?job=email|dedup|analysis|all
 export const POST = withSession("POST cron/clear", async (session, req: NextRequest) => {
   const job = new URL(req.url).searchParams.get("job") ?? "all";
 
@@ -14,6 +12,11 @@ export const POST = withSession("POST cron/clear", async (session, req: NextRequ
   }
   if (job === "dedup" || job === "all") {
     clears.push(setMetaValue(session.accessToken, session.sheetId, "dedup_running_at", ""));
+  }
+  if (job === "analysis" || job === "all") {
+    for (const period of ["week", "month", "year"]) {
+      clears.push(upsertAnalysisCacheRow(session.accessToken, session.sheetId, period, period, "cancelled"));
+    }
   }
   await Promise.all(clears);
 
