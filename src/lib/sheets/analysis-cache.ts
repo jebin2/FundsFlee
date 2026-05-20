@@ -7,7 +7,7 @@ import { todayISO } from "@/lib/date/iso";
 // ── Analysis Cache ────────────────────────────────────────────────────────────
 // Columns: A=id B=period C=period_type D=summary_json E=generated_at F=status G=drive_file_id
 
-export type AnalysisCacheStatus = "generating" | "done" | "failed";
+export type AnalysisCacheStatus = "generating" | "done" | "failed" | "cancelled";
 
 export interface CachedAnalysis {
   id: string;
