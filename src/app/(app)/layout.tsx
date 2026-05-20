@@ -29,6 +29,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useFetchInterceptor(triggerSignOut);
 
+  // Reload when a new service worker activates so stale JS bundles
+  // (which carry old Server Action IDs) are never used against the new build.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const reload = () => window.location.reload();
+    navigator.serviceWorker.addEventListener("controllerchange", reload);
+    return () => navigator.serviceWorker.removeEventListener("controllerchange", reload);
+  }, []);
+
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/");
   }, [status, router]);
