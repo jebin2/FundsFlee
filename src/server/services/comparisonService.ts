@@ -6,6 +6,7 @@ import {
 import type { CompareResult } from "@/types";
 import type { SheetSession } from "./types";
 import { runComparisonJob } from "@/server/jobs/comparisonJob";
+import { log } from "@/lib/logger";
 
 const CACHE_FRESH_MS = 24 * 60 * 60 * 1000;
 
@@ -71,18 +72,26 @@ export async function requestComparison(
   const key = compareKey(merchants, period);
   const current = await getAnalysisCache(session.accessToken, session.sheetId, key, Infinity);
 
-  if (current?.status === "generating") return { status: "generating" };
+  if (current?.status === "generating") {
+    log.info("compare", "already generating — skipping", { key });
+    return { status: "generating" };
+  }
 
   if (!request.force_refresh && current?.status === "done") {
     const ageMs = Date.now() - new Date(current.generated_at).getTime();
     if (ageMs < CACHE_FRESH_MS) {
+      log.info("compare", "cache hit — returning cached", { key, ageS: Math.round(ageMs / 1000) });
       return readCachedComparison(session, key);
     }
+    log.info("compare", "cache stale — regenerating", { key, ageS: Math.round(ageMs / 1000) });
   }
 
+  log.info("compare", "triggering AI job", { key, force: !!request.force_refresh });
   await upsertAnalysisCacheRow(session.accessToken, session.sheetId, key, "compare", "generating");
 
-  runComparisonJob(session, merchants, period, request.region ?? "").catch(() => {});
+  runComparisonJob(session, merchants, period, request.region ?? "").catch((err) => {
+    log.error("compare", "job failed", err, { key });
+  });
 
   return { status: "generating" };
 }

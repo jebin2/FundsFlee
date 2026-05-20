@@ -58,7 +58,7 @@ export async function runTextParseJob(
 
     log.info("text-parse", "done", { txId, merchant: parsed.merchant, amount: parsed.amount, itemCount: items.length });
   } catch (err) {
-    log.error("text-parse", "failed", { txId, err });
+    log.error("text-parse", "failed", err, { txId });
     await updateTransactionField(session.accessToken, session.sheetId, txId, { status: "failed" }).catch(() => {});
     throw err;
   }

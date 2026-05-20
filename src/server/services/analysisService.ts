@@ -6,6 +6,7 @@ import {
 import type { AnalysisResult } from "@/types";
 import type { SheetSession } from "./types";
 import { runAnalysisJob } from "@/server/jobs/analysisJob";
+import { log } from "@/lib/logger";
 
 const CACHE_FRESH_MS = 24 * 60 * 60 * 1000;
 
@@ -62,19 +63,25 @@ export async function requestAnalysis(
   const current = await getAnalysisCache(session.accessToken, session.sheetId, period, Infinity);
 
   if (current?.status === "generating") {
+    log.info("analysis", "already generating — skipping", { period });
     return { status: "generating" };
   }
 
   if (!request.force_refresh && current?.status === "done") {
     const ageMs = Date.now() - new Date(current.generated_at).getTime();
     if (ageMs < CACHE_FRESH_MS) {
+      log.info("analysis", "cache hit — returning cached", { period, ageS: Math.round(ageMs / 1000) });
       return readCachedAnalysis(session, period);
     }
+    log.info("analysis", "cache stale — regenerating", { period, ageS: Math.round(ageMs / 1000) });
   }
 
+  log.info("analysis", "triggering AI job", { period, force: !!request.force_refresh });
   await upsertAnalysisCacheRow(session.accessToken, session.sheetId, period, period, "generating");
 
-  runAnalysisJob(session, period, request.region ?? "", request.lifestyle_tags ?? []).catch(() => {});
+  runAnalysisJob(session, period, request.region ?? "", request.lifestyle_tags ?? []).catch((err) => {
+    log.error("analysis", "job failed", err, { period });
+  });
 
   return { status: "generating" };
 }

@@ -29,5 +29,9 @@ export const log = {
       : err !== undefined ? String(err) : undefined;
     const combined = errStr ? { ...data, err: errStr } : data;
     console.error(fmt("ERROR", tag, msg, combined));
+    if (err instanceof Error && err.stack) {
+      const frames = err.stack.split("\n").slice(1).join("\n");
+      if (frames) console.error(frames);
+    }
   },
 };

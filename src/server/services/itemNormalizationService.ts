@@ -33,6 +33,7 @@ function processedNoteKeys(suggestions: ItemSuggestion[]): Set<string> {
 }
 
 export async function runItemNormalization(session: SheetSession): Promise<void> {
+  log.info("normalize", "started");
   try {
     const [transactions, existing] = await Promise.all([
       getAllTransactions(session.accessToken, session.sheetId),
@@ -155,8 +156,9 @@ export async function runItemNormalization(session: SheetSession): Promise<void>
     }
 
     await setMetaValue(session.accessToken, session.sheetId, "items_normalized_at", new Date().toISOString());
+    log.info("normalize", "done", { suggestions: toAdd.length });
   } catch (err) {
-    log.error("normalize", "background normalization failed", err);
+    log.error("normalize", "failed", err);
   }
 }
 
@@ -167,9 +169,10 @@ export async function requestItemNormalization(
   const lastRun = meta.items_normalized_at ? new Date(meta.items_normalized_at).getTime() : 0;
 
   if (Date.now() - lastRun < RUN_INTERVAL_MS) {
+    log.info("normalize", "skipped — ran recently", { ageS: Math.round((Date.now() - lastRun) / 1000) });
     return { skipped: true };
   }
 
-  runItemNormalization(session).catch(() => {});
+  runItemNormalization(session).catch((err) => log.error("normalize", "job failed", err));
   return { started: true };
 }

@@ -7,6 +7,7 @@ import {
 } from "@/lib/sheets";
 import { runStatementParseJob } from "@/server/jobs/statementParseJob";
 import { todayISO } from "@/lib/date/iso";
+import { log } from "@/lib/logger";
 import type { Transaction } from "@/types";
 
 export const maxDuration = 60;
@@ -49,7 +50,7 @@ export const POST = withSession("POST parse/statement/async", async (session, re
 
   await appendTransaction(session.accessToken, session.sheetId, placeholder);
   runStatementParseJob(session, placeholder.id).catch((err) => {
-    console.error("[statement-parse] background job failed:", placeholder.id, err);
+    log.error("statement-parse", "background job failed", err, { txId: placeholder.id });
   });
 
   return NextResponse.json({ ok: true, txId: placeholder.id });

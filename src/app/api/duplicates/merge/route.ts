@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
 import { appendTransaction } from "@/lib/sheets";
 import { runMergeJob } from "@/server/jobs/mergeJob";
+import { log } from "@/lib/logger";
 import { todayISO } from "@/lib/date/iso";
 import type { Transaction } from "@/types";
 
@@ -37,7 +38,7 @@ export const POST = withSession("POST duplicates/merge", async (session, req: Ne
 
   // Fire-and-forget — responds immediately, job runs in background
   runMergeJob(session, placeholder.id).catch((err) => {
-    console.error("[merge] background job failed:", placeholder.id, err);
+    log.error("merge", "background job failed", err, { placeholderId: placeholder.id });
   });
 
   return NextResponse.json({ ok: true, placeholderId: placeholder.id });

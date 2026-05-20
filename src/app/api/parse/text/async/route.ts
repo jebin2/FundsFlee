@@ -3,6 +3,7 @@ import { withSession } from "@/server/http/withSession";
 import { appendTransaction } from "@/lib/sheets";
 import { runTextParseJob } from "@/server/jobs/textParseJob";
 import { todayISO } from "@/lib/date/iso";
+import { log } from "@/lib/logger";
 import type { Transaction } from "@/types";
 
 // POST /api/parse/text/async
@@ -30,7 +31,7 @@ export const POST = withSession("POST parse/text/async", async (session, req: Ne
 
   await appendTransaction(session.accessToken, session.sheetId, placeholder);
   runTextParseJob(session, placeholder.id, region).catch((err) => {
-    console.error("[text-parse] background job failed:", placeholder.id, err);
+    log.error("text-parse", "background job failed", err, { txId: placeholder.id });
   });
 
   return NextResponse.json({ ok: true, txId: placeholder.id });

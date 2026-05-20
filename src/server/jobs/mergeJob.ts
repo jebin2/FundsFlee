@@ -29,7 +29,7 @@ export async function runMergeJob(
       status: "merging",
     });
   } catch (err) {
-    log.error("merge", "failed to set merging status", { placeholderId, err });
+    log.error("merge", "failed to set merging status", err, { placeholderId });
     await updateTransactionField(session.accessToken, session.sheetId, placeholderId, { status: "merge_failed" }).catch(() => {});
     return;
   }
@@ -108,12 +108,12 @@ export async function runMergeJob(
       return;
     } catch (err) {
       lastError = err;
-      log.warn("merge", `attempt ${attempt + 1} failed`, { placeholderId, err: String(err) });
+      log.warn("merge", `attempt ${attempt + 1} failed`, { placeholderId, err: err instanceof Error ? err.message : String(err) });
     }
   }
 
   // All attempts exhausted
-  log.error("merge", "all retries failed — marking merge_failed", { placeholderId, err: lastError });
+  log.error("merge", "all retries failed — marking merge_failed", lastError, { placeholderId });
   await updateTransactionField(session.accessToken, session.sheetId, placeholderId, {
     status: "merge_failed",
   });

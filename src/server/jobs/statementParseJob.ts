@@ -115,7 +115,7 @@ export async function runStatementParseJob(
 
     log.info("statement-parse", "done", { placeholderId, count: rows.length });
   } catch (err) {
-    log.error("statement-parse", "failed", { placeholderId, err });
+    log.error("statement-parse", "failed", err, { placeholderId });
     await updateTransactionField(session.accessToken, session.sheetId, placeholderId, { status: "failed" }).catch(() => {});
     throw err;
   }
