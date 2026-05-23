@@ -73,12 +73,16 @@ export async function runEmailImportJob(session: SheetSession, { manual = false 
       let from = "";
       let subject = "";
       let bodyText = "";
+      let receivedTime = "00:00";
 
       try {
         const msgRes = await gmail.users.messages.get({ userId: "me", id: msgId, format: "full" });
         const headers = msgRes.data.payload?.headers ?? [];
         from    = headers.find((h) => h.name?.toLowerCase() === "from")?.value ?? "";
         subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value ?? "";
+        if (msgRes.data.internalDate) {
+          receivedTime = new Date(parseInt(msgRes.data.internalDate)).toISOString().slice(11, 16);
+        }
         const { text, mimeType } = extractPayloadText(msgRes.data.payload as Parameters<typeof extractPayloadText>[0]);
         bodyText = extractEmailText(text, mimeType);
       } catch {
@@ -110,7 +114,7 @@ export async function runEmailImportJob(session: SheetSession, { manual = false 
       const tx: Transaction = {
         id: crypto.randomUUID(),
         date: transaction.date,
-        time: transaction.time,
+        time: transaction.time !== "00:00" ? transaction.time : receivedTime,
         amount: transaction.amount,
         merchant: transaction.merchant,
         category: transaction.category,
