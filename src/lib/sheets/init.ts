@@ -1,5 +1,7 @@
-import { google } from "googleapis";
-import { getSheetsClient, getDriveClient } from "./client";
+import { getDriveClient, getSheetsClient } from "./client";
+import { EXPECTED_HEADERS, CATEGORIES_HEADERS, ANALYSIS_CACHE_HEADERS, ITEM_SUGGESTIONS_HEADERS, META_HEADERS, PARSED_EMAILS_HEADERS } from "./schema/headers";
+import { seedDefaultCategories } from "./schema/defaultCategories";
+import { ensureTransactionSchema, ensureParsedEmailsTab } from "./schema/migrations";
 
 // appProperties are tied to our OAuth client ID — invisible in Drive UI,
 // survives renames/moves, and is the authoritative app identifier.
@@ -7,75 +9,9 @@ const APP_PROP_KEY = "fundsFleeRole";
 const APP_SHEET_ROLE = "main";
 const SHEET_DISPLAY_NAME = "FundsFlee";
 
-export const EXPECTED_HEADERS = [
-  "id", "date", "time", "amount", "original_amount", "original_currency",
-  "merchant", "category", "subcategory", "item_name", "payment_method",
-  "tags", "notes", "source", "raw_input", "location",
-  "is_duplicate", "duplicate_ref", "created_at", "updated_at",
-  "status", "receipt_url", "receipt_id", "quantity", "deleted", "recurrence",
-];
-
-// Per-sheetId cache — avoids re-fetching the header row on every appendTransaction()
-const schemaChecked = new Set<string>();
-const parsedEmailsTabChecked = new Set<string>();
-
-// Auto-creates the parsed_emails tab for users whose sheet predates the feature.
-// Safe to call multiple times — cached per sheetId.
-export async function ensureParsedEmailsTab(
-  sheets: ReturnType<typeof getSheetsClient>,
-  sheetId: string
-): Promise<void> {
-  if (parsedEmailsTabChecked.has(sheetId)) return;
-
-  try {
-    await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range: "parsed_emails!A1" });
-    parsedEmailsTabChecked.add(sheetId);
-    return;
-  } catch {
-    // Tab doesn't exist yet — fall through to create it
-  }
-
-  // Add the tab (ignore error if it already exists due to a race)
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: sheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title: "parsed_emails" } } }] },
-  }).catch(() => {});
-
-  // Write header
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: "parsed_emails!A1:F1",
-    valueInputOption: "RAW",
-    requestBody: { values: [["email_id", "from", "subject", "parsed_at", "status", "tx_ids"]] },
-  }).catch(() => {});
-
-  parsedEmailsTabChecked.add(sheetId);
-}
-
-export async function ensureTransactionSchema(
-  sheets: ReturnType<typeof google.sheets>,
-  sheetId: string
-) {
-  if (schemaChecked.has(sheetId)) return;
-
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: sheetId,
-    range: "transactions!A1:Z1",
-  });
-  const current = (res.data.values?.[0] ?? []) as string[];
-  if (current.length >= EXPECTED_HEADERS.length) {
-    schemaChecked.add(sheetId);
-    return;
-  }
-  // Write full header row
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: "transactions!A1:Z1",
-    valueInputOption: "RAW",
-    requestBody: { values: [EXPECTED_HEADERS] },
-  });
-  schemaChecked.add(sheetId);
-}
+export { EXPECTED_HEADERS } from "./schema/headers";
+export { ensureParsedEmailsTab, ensureTransactionSchema } from "./schema/migrations";
+export { seedDefaultCategories } from "./schema/defaultCategories";
 
 export async function initSpendingSheet(
   accessToken: string,
@@ -98,7 +34,6 @@ export async function initSpendingSheet(
     const sheetId = file.id!;
     const sheetUrl = file.webViewLink
       ?? `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
-    // Migrate existing sheets — add missing columns and tabs
     await ensureTransactionSchema(sheets, sheetId).catch(() => {});
     await ensureParsedEmailsTab(sheets, sheetId).catch(() => {});
     return { sheetId, sheetUrl, isNew: false };
@@ -128,59 +63,46 @@ export async function initSpendingSheet(
     requestBody: { appProperties: { [APP_PROP_KEY]: APP_SHEET_ROLE } },
   });
 
-  // Headers — 26 columns (A–Z)
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "transactions!A1:Z1",
     valueInputOption: "RAW",
-    requestBody: {
-      values: [[
-        "id", "date", "time", "amount", "original_amount", "original_currency",
-        "merchant", "category", "subcategory", "item_name", "payment_method",
-        "tags", "notes", "source", "raw_input", "location",
-        "is_duplicate", "duplicate_ref", "created_at", "updated_at",
-        "status", "receipt_url", "receipt_id", "quantity", "deleted", "recurrence",
-      ]],
-    },
+    requestBody: { values: [Array.from(EXPECTED_HEADERS)] },
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "categories!A1:G1",
     valueInputOption: "RAW",
-    requestBody: {
-      values: [["id", "name", "parent_id", "color", "icon", "is_default", "created_at"]],
-    },
+    requestBody: { values: [Array.from(CATEGORIES_HEADERS)] },
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
-    range: "analysis_cache!A1:E1",
+    range: "analysis_cache!A1:G1",
     valueInputOption: "RAW",
-    requestBody: {
-      values: [["id", "period", "period_type", "summary_json", "generated_at", "status", "drive_file_id"]],
-    },
+    requestBody: { values: [Array.from(ANALYSIS_CACHE_HEADERS)] },
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "item_suggestions!A1:G1",
     valueInputOption: "RAW",
-    requestBody: { values: [["key", "field", "current_val", "suggested", "source", "status", "updated_at"]] },
+    requestBody: { values: [Array.from(ITEM_SUGGESTIONS_HEADERS)] },
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "meta!A1:B1",
     valueInputOption: "RAW",
-    requestBody: { values: [["key", "value"]] },
+    requestBody: { values: [Array.from(META_HEADERS)] },
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: "parsed_emails!A1:F1",
     valueInputOption: "RAW",
-    requestBody: { values: [["email_id", "from", "subject", "parsed_at", "status", "tx_ids"]] },
+    requestBody: { values: [Array.from(PARSED_EMAILS_HEADERS)] },
   });
 
   await seedDefaultCategories(sheets, sheetId);
@@ -195,51 +117,12 @@ export async function initSpendingSheet(
   return { sheetId, sheetUrl, isNew: true };
 }
 
-export async function seedDefaultCategories(
-  sheets: ReturnType<typeof google.sheets>,
-  sheetId: string
-) {
-  const defaults = [
-    { name: "Food & Dining", icon: "🍽️", color: "#FF6B6B", subs: ["Restaurants", "Cafes", "Swiggy/Zomato", "Groceries"] },
-    { name: "Transport", icon: "🚗", color: "#4ECDC4", subs: ["Ola/Uber", "Fuel", "Auto", "Bus/Train", "Flight"] },
-    { name: "Shopping", icon: "🛍️", color: "#45B7D1", subs: ["Clothing", "Electronics", "Household", "Online"] },
-    { name: "Entertainment", icon: "🎬", color: "#96CEB4", subs: ["Movies", "OTT", "Events", "Games"] },
-    { name: "Health", icon: "🏥", color: "#FFEAA7", subs: ["Pharmacy", "Doctor", "Gym", "Lab Tests"] },
-    { name: "Bills & Utilities", icon: "⚡", color: "#DDA0DD", subs: ["Electricity", "Mobile", "Internet", "Rent", "EMI"] },
-    { name: "Education", icon: "📚", color: "#98D8C8", subs: ["Books", "Courses", "School"] },
-    { name: "Personal Care", icon: "💆", color: "#F7DC6F", subs: ["Salon", "Spa"] },
-    { name: "Gifts & Donations", icon: "🎁", color: "#BB8FCE", subs: [] },
-    { name: "Others", icon: "📦", color: "#AED6F1", subs: [] },
-  ];
-
-  const rows: string[][] = [];
-  const now = new Date().toISOString();
-
-  for (const cat of defaults) {
-    const parentId = crypto.randomUUID();
-    rows.push([parentId, cat.name, "", cat.color, cat.icon, "true", now]);
-    for (const sub of cat.subs) {
-      rows.push([crypto.randomUUID(), sub, parentId, cat.color, cat.icon, "true", now]);
-    }
-  }
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: sheetId,
-    range: "categories!A2",
-    valueInputOption: "RAW",
-    requestBody: { values: rows },
-  });
-}
-
-// ── Reset ─────────────────────────────────────────────────────────────────────
-
 export async function resetSheet(
   accessToken: string,
   sheetId: string
 ): Promise<void> {
   const sheets = getSheetsClient(accessToken);
 
-  // Clear data from all tabs (keep header rows)
   await sheets.spreadsheets.values.batchClear({
     spreadsheetId: sheetId,
     requestBody: {
@@ -254,7 +137,6 @@ export async function resetSheet(
     },
   });
 
-  // Re-seed categories and restore sheet_url in meta
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
   await Promise.all([
     seedDefaultCategories(sheets, sheetId),
