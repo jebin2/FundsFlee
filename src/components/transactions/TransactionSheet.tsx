@@ -1,22 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
 import { EditForm, type EditFormHandle } from "@/components/transactions/EditForm";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
-import { removeLocalTransaction, enqueueOp, pendingCount } from "@/lib/offline";
-import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { useTransactionsStore } from "@/store/transactionsStore";
-import { useNetworkStore } from "@/store/networkStore";
-import { useTransactions } from "@/hooks/useTransactions";
-import { transactionsApi, transactionUrl } from "@/lib/api/transactions";
-import { receiptsApi } from "@/lib/api/receipts";
-import { duplicatesApi } from "@/lib/api/duplicates";
-import { isInFlightStatus, isFailedStatus } from "@/domain/transactions/status";
-import { decodeMergeMetadata } from "@/domain/transactions/metadata";
-
-// ── InFlight placeholder ──────────────────────────────────────────────────────
+import { useTransactionSheetController } from "@/features/transactions/hooks/useTransactionSheetController";
 
 function InFlightView({ status }: { status: string }) {
   const isMerging = status === "merging";
@@ -39,115 +28,23 @@ function InFlightView({ status }: { status: string }) {
   );
 }
 
-// ── Sheet ─────────────────────────────────────────────────────────────────────
-
 interface TransactionSheetProps {
   tx: Transaction;
   onClose: () => void;
 }
 
 export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetProps) {
-  const isOnline = useOnlineStatus();
-  const removeTransaction = useTransactionsStore((s) => s.removeTransaction);
-  const { refresh } = useTransactions();
   const editFormRef = useRef<EditFormHandle | null>(null);
+  const {
+    tx, view, setView,
+    showReceiptItems, setShowReceiptItems,
+    deleting, retrying, error,
+    isInFlight, isFailed, isMergeFail,
+    handleDelete, retryAI, retryMerge, onTxUpdated,
+  } = useTransactionSheetController(initialTx, onClose);
 
-  const liveTx = useTransactionsStore((s) => s.transactions.find((t) => t.id === initialTx.id)) ?? initialTx;
-  const [tx, setTx] = useState<Transaction>(liveTx);
-  const [view, setView] = useState<"detail" | "edit">(
-    isFailedStatus(liveTx.status) ? "edit" : "detail"
-  );
-  const [showReceiptItems, setShowReceiptItems] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => { setTx(liveTx); }, [liveTx]);
-
-  // Lock body scroll while sheet is open
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, []);
-
-  // Poll API while in-flight and online
-  useEffect(() => {
-    if (!isInFlightStatus(tx.status) || !isOnline) return;
-    const timer = setInterval(() => refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [tx.status, isOnline, refresh]);
-
-  async function handleDelete() {
-    if (!confirm("Delete this transaction?")) return;
-    setError(null);
-    setDeleting(true);
-    try {
-      if (isOnline) {
-        const res = await transactionsApi.delete(tx.id);
-        if (!res.ok) throw new Error("Delete failed — please try again.");
-        removeTransaction(tx.id);
-        await removeLocalTransaction(tx.id);
-      } else {
-        removeTransaction(tx.id);
-        await removeLocalTransaction(tx.id);
-        await enqueueOp("DELETE", transactionUrl(tx.id), null);
-        useNetworkStore.getState().setPendingCount(await pendingCount());
-      }
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed.");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function retryAI() {
-    if (retrying) return;
-    setError(null);
-    setRetrying(true);
-    try {
-      const region = localStorage.getItem("region") ?? "";
-      let res: Response;
-      if (tx.source === "sms" || tx.source === "manual") {
-        res = await fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
-      } else if (tx.source === "import") {
-        res = await fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
-      } else {
-        res = await receiptsApi.process(tx.id, region);
-      }
-      if (!res.ok) throw new Error("Retry failed — please try again.");
-      setTx((prev) => ({ ...prev, status: "processing" }));
-      setView("detail");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Retry failed.");
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  async function retryMerge() {
-    if (retrying) return;
-    setError(null);
-    setRetrying(true);
-    try {
-      // Re-enqueue the same merge job using the stored source IDs
-      const res = await duplicatesApi.merge(decodeMergeMetadata(tx.notes));
-      if (!res.ok) throw new Error("Retry failed — please try again.");
-      setTx((prev) => ({ ...prev, status: "merging" }));
-      setView("detail");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Retry failed.");
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  const isInFlight  = isInFlightStatus(tx.status);
-  const isFailed    = isFailedStatus(tx.status);
-  const isMergeFail = tx.status === "merge_failed";
   const heroColor = isInFlight ? "var(--color-secondary)" : isFailed ? "var(--color-error)" : "var(--color-primary)";
 
-  // ── Hero action buttons (right side) ──────────────────────────────────────
   const heroActions = (() => {
     const deleteBtn = (
       <button onClick={handleDelete} disabled={deleting}
@@ -194,12 +91,10 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
       <div className="fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-3xl overflow-hidden md:left-1/2 md:right-auto md:w-full md:max-w-2xl md:-translate-x-1/2"
         style={{ background: "var(--color-surface)", maxHeight: "92dvh" }}>
 
-        {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: "var(--color-outline-variant)" }} />
         </div>
 
-        {/* Hero */}
         <div className="px-5 pt-3 pb-5 flex-shrink-0" style={{ background: heroColor }}>
           <div className="flex items-center gap-3 mb-4">
             <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -248,7 +143,6 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
           )}
         </div>
 
-        {/* Scrollable body */}
         <div className="overflow-y-auto flex-1">
           {isInFlight && <InFlightView status={tx.status!} />}
 
@@ -261,8 +155,8 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                     <span className="material-symbols-outlined" style={{ color: "var(--color-error)", fontSize: 18 }}>error</span>
                     <p style={{ fontSize: 13, color: "var(--color-on-error-container)" }}>
                       {isMergeFail
-                        ? "AI couldn’t merge these duplicates. Tap retry or resolve manually."
-                        : "AI couldn’t read this receipt. Fill in details below or retry."}
+                        ? "AI couldn't merge these duplicates. Tap retry or resolve manually."
+                        : "AI couldn't read this receipt. Fill in details below or retry."}
                     </p>
                   </div>
                   <button
@@ -277,7 +171,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                   </button>
                 </div>
               )}
-              <EditForm ref={editFormRef} tx={tx} onSaved={(updated) => { setTx(updated); setView("detail"); }} />
+              <EditForm ref={editFormRef} tx={tx} onSaved={onTxUpdated} />
             </>
           )}
 
@@ -287,7 +181,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                 style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
                 {[
                   ...(tx.item_name ? [{ label: "Item", value: tx.item_name }] : []),
-                  ...(tx.quantity ? [{ label: "Quantity", value: tx.quantity }] : []),
+                  ...(tx.quantity  ? [{ label: "Quantity", value: tx.quantity }] : []),
                   { label: "Merchant", value: tx.merchant },
                   { label: "Date", value: new Date(tx.date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) },
                   { label: "Time", value: tx.time || "—" },

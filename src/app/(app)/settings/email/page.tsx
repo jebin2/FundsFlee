@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { MobileSettingsHeader } from "@/features/settings/components/MobileSettingsHeader";
+import { usePollingInterval } from "@/features/settings/hooks/usePollingInterval";
 
 interface EmailStatus {
   fromContains: string[];
@@ -17,21 +18,15 @@ interface EmailStatus {
 type JobState = "idle" | "running" | "done";
 
 export default function EmailImportSettingsPage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [jobState, setJobState] = useState<JobState>("idle");
-  const [status, setStatus] = useState<EmailStatus | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [jobState,     setJobState]     = useState<JobState>("idle");
+  const [status,       setStatus]       = useState<EmailStatus | null>(null);
   const [fromContains, setFromContains] = useState<string[]>([]);
-  const [daysBack, setDaysBack] = useState(7);
-  const [filterInput, setFilterInput] = useState("");
-  const [error, setError] = useState("");
+  const [daysBack,     setDaysBack]     = useState(7);
+  const [filterInput,  setFilterInput]  = useState("");
+  const [error,        setError]        = useState("");
   const filterInputRef = useRef<HTMLInputElement>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollCountRef = useRef(0);
-
-  function stopPolling() {
-    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-  }
+  const { start: startPolling } = usePollingInterval();
 
   const loadStatus = useCallback(async (): Promise<EmailStatus | null> => {
     try {
@@ -41,38 +36,26 @@ export default function EmailImportSettingsPage() {
     } catch { return null; }
   }, []);
 
-  const startPolling = useCallback(() => {
-    stopPolling();
-    pollCountRef.current = 0;
-    pollTimerRef.current = setInterval(async () => {
-      if (++pollCountRef.current > 60) { stopPolling(); setJobState("idle"); return; }
-      const data = await loadStatus();
-      if (!data) return;
-      setStatus(data);
-      if (!data.runningAt) {
-        stopPolling();
-        setJobState("done");
-        setTimeout(() => setJobState("idle"), 5000);
-      }
-    }, 5000);
-  }, [loadStatus]);
-
   const load = useCallback(async () => {
     const data = await loadStatus();
     if (data) {
       setStatus(data);
       setFromContains(data.fromContains);
       setDaysBack(data.daysBack);
-      if (data.runningAt) {
-        const ageMs = Date.now() - new Date(data.runningAt).getTime();
-        if (ageMs < 5 * 60 * 1000) { setJobState("running"); startPolling(); }
+      if (data.runningAt && Date.now() - new Date(data.runningAt).getTime() < 5 * 60 * 1000) {
+        setJobState("running");
+        startPolling(async (_, stop) => {
+          const d = await loadStatus();
+          if (!d) return;
+          setStatus(d);
+          if (!d.runningAt) { stop(); setJobState("done"); setTimeout(() => setJobState("idle"), 5000); }
+        }, 5000, 60, () => setJobState("idle"));
       }
     }
     setLoading(false);
   }, [loadStatus, startPolling]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => () => stopPolling(), []);
 
   async function saveConfig(filters: string[], days: number) {
     setError("");
@@ -112,12 +95,15 @@ export default function EmailImportSettingsPage() {
     setError("");
     setJobState("running");
     try {
-      // Flush any unsaved daysBack (user may have changed it without blurring)
-      // before triggering the job — the server reads config at job start time.
       await saveConfig(fromContains, daysBack);
       const res = await fetch("/api/email/fetch?manual=1", { method: "POST" });
       if (!res.ok) { setJobState("idle"); setError("Could not start fetch — please try again."); return; }
-      startPolling();
+      startPolling(async (_, stop) => {
+        const d = await loadStatus();
+        if (!d) return;
+        setStatus(d);
+        if (!d.runningAt) { stop(); setJobState("done"); setTimeout(() => setJobState("idle"), 5000); }
+      }, 5000, 60, () => setJobState("idle"));
     } catch {
       setJobState("idle");
       setError("Network error — could not start fetch.");
@@ -134,17 +120,7 @@ export default function EmailImportSettingsPage() {
 
   return (
     <div className="max-w-lg mx-auto px-5 pb-24">
-
-      {/* Mobile header */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center pt-10 pb-3 gap-3"
-        style={{ background: "var(--color-background)" }}>
-        <button onClick={() => router.back()}
-          className="w-9 h-9 flex items-center justify-center rounded-xl"
-          style={{ background: "var(--color-surface-container)" }}>
-          <span className="material-symbols-outlined" style={{ color: "var(--color-on-surface-variant)" }}>arrow_back</span>
-        </button>
-        <h1 className="font-semibold" style={{ fontSize: 20 }}>Email Import</h1>
-      </div>
+      <MobileSettingsHeader title="Email Import" />
 
       {loading ? (
         <div className="flex justify-center pt-16">
@@ -153,8 +129,6 @@ export default function EmailImportSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6 pt-4">
-
-          {/* ── Status card ─────────────────────────────── */}
           <div className="rounded-3xl p-5 flex items-center gap-4"
             style={{
               background: isActive ? "var(--color-primary)" : "var(--color-surface-container-lowest)",
@@ -182,17 +156,13 @@ export default function EmailImportSettingsPage() {
             </div>
           </div>
 
-          {/* ── Sender filters ──────────────────────────── */}
           <div className="flex flex-col gap-2">
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--color-on-surface)" }}>Sender filters</p>
             <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)", lineHeight: 1.5 }}>
               Emails from these senders are scanned for transactions. Changes save automatically.
             </p>
-
             <div className="rounded-2xl border p-4 flex flex-col gap-3 mt-1"
               style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
-
-              {/* Chips */}
               {fromContains.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {fromContains.map((f) => (
@@ -206,8 +176,6 @@ export default function EmailImportSettingsPage() {
                   ))}
                 </div>
               )}
-
-              {/* Input row */}
               <div className="flex gap-2">
                 <input
                   ref={filterInputRef}
@@ -226,14 +194,12 @@ export default function EmailImportSettingsPage() {
                   Add
                 </button>
               </div>
-
               <p style={{ fontSize: 12, color: "var(--color-outline)" }}>
                 Partial match — "hdfcbank" matches any sender whose address contains that text.
               </p>
             </div>
           </div>
 
-          {/* ── Error ───────────────────────────────────── */}
           {error && (
             <p className="px-4 py-3 rounded-2xl text-sm"
               style={{ background: "var(--color-error-container)", color: "var(--color-on-error-container)" }}>
@@ -241,11 +207,9 @@ export default function EmailImportSettingsPage() {
             </p>
           )}
 
-          {/* ── Fetch section ────────────────────────────── */}
           <div className="flex flex-col gap-3">
             <p style={{ fontSize: 15, fontWeight: 600, color: "var(--color-on-surface)" }}>Manual fetch</p>
 
-            {/* Job running banner */}
             {jobState === "running" && (
               <div className="rounded-2xl p-4 flex items-center gap-3"
                 style={{ background: "var(--color-primary-fixed)", border: "1px solid var(--color-primary-fixed-dim)" }}>
@@ -260,7 +224,6 @@ export default function EmailImportSettingsPage() {
               </div>
             )}
 
-            {/* Job done banner */}
             {jobState === "done" && (
               <div className="rounded-2xl p-4 flex items-center gap-3"
                 style={{ background: "var(--color-primary-fixed)", border: "1px solid var(--color-primary-fixed-dim)" }}>
@@ -276,7 +239,6 @@ export default function EmailImportSettingsPage() {
               </div>
             )}
 
-            {/* Last run stats (idle only) */}
             {jobState === "idle" && status?.lastRun && (
               <div className="rounded-2xl p-4"
                 style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
@@ -288,16 +250,12 @@ export default function EmailImportSettingsPage() {
               </div>
             )}
 
-            {/* Fetch now row: days input + button */}
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 px-4 py-3 rounded-2xl flex-1"
                 style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
                 <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)", flex: 1 }}>Search last</p>
                 <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={daysBack}
+                  type="number" min={1} max={365} value={daysBack}
                   onChange={(e) => setDaysBack(Math.max(1, parseInt(e.target.value) || 7))}
                   onBlur={() => void saveConfig(fromContains, daysBack)}
                   className="w-14 px-2 py-1 rounded-lg text-center font-semibold outline-none"
@@ -305,17 +263,11 @@ export default function EmailImportSettingsPage() {
                 />
                 <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>days</p>
               </div>
-
               <button
                 onClick={fetchNow}
                 disabled={jobState !== "idle" || fromContains.length === 0}
                 className="px-5 py-3 rounded-2xl font-semibold flex items-center gap-2 flex-shrink-0"
-                style={{
-                  background: "var(--color-primary)",
-                  color: "var(--color-on-primary)",
-                  fontSize: 14,
-                  opacity: (jobState !== "idle" || fromContains.length === 0) ? 0.4 : 1,
-                }}>
+                style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", fontSize: 14, opacity: (jobState !== "idle" || fromContains.length === 0) ? 0.4 : 1 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                   {jobState === "running" ? "hourglass_empty" : "download"}
                 </span>
@@ -327,7 +279,6 @@ export default function EmailImportSettingsPage() {
               Auto-import also runs once daily when you open the app. Only email text is read — no attachments.
             </p>
           </div>
-
         </div>
       )}
     </div>

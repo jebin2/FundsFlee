@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { MobileSettingsHeader } from "@/features/settings/components/MobileSettingsHeader";
+import { usePollingInterval } from "@/features/settings/hooks/usePollingInterval";
 
 interface CronStatus {
   registered: boolean;
@@ -32,14 +33,19 @@ function isRecentlyRunning(runningAt: string | null): boolean {
   return Date.now() - new Date(runningAt).getTime() < 5 * 60 * 1000;
 }
 
+function isAnalysisRunning(status: CronStatus | null): boolean {
+  return ["week", "month", "year"].some(
+    (p) => status?.analysis?.[p as "week" | "month" | "year"]?.status === "generating"
+  );
+}
+
 export default function ScheduledSettingsPage() {
-  const router = useRouter();
-  const [status,      setStatus]     = useState<CronStatus | null>(null);
-  const [loading,     setLoading]    = useState(true);
-  const [triggering,  setTriggering] = useState<"all" | "email" | "dedup" | "analysis" | null>(null);
-  const [cancelling,  setCancelling] = useState<"email" | "dedup" | "analysis" | null>(null);
-  const [lastMsg,     setLastMsg]    = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [status,     setStatus]     = useState<CronStatus | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [triggering, setTriggering] = useState<"all" | "email" | "dedup" | "analysis" | null>(null);
+  const [cancelling, setCancelling] = useState<"email" | "dedup" | "analysis" | null>(null);
+  const [lastMsg,    setLastMsg]    = useState<string | null>(null);
+  const { start: startPolling, stop: stopPolling } = usePollingInterval();
 
   const fetchStatus = useCallback(async (): Promise<CronStatus | null> => {
     try {
@@ -51,43 +57,16 @@ export default function ScheduledSettingsPage() {
     } catch { return null; }
   }, []);
 
-  function stopPolling() {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }
-
-  // Poll every 10s (reduced from 5s to stay within Sheets quota).
-  // Stops when neither email nor dedup is running.
-  function startPolling() {
-    stopPolling();
-    let ticks = 0;
-    pollRef.current = setInterval(async () => {
-      if (++ticks > 36) { stopPolling(); return; } // 6 min max
-      const data = await fetchStatus();
-      const analysisRunning = data
-        ? ["week", "month", "year"].some(
-            (p) => data.analysis?.[p as "week" | "month" | "year"]?.status === "generating"
-          )
-        : false;
-      if (data && !isRecentlyRunning(data.email.runningAt) && !isRecentlyRunning(data.dedup.runningAt) && !analysisRunning) {
-        stopPolling();
-      }
-    }, 10_000);
-  }
-
   useEffect(() => {
     fetchStatus().then((data) => {
       setLoading(false);
-      // Resume polling if anything is still running when the page opens
-      const analysisRunningOnLoad = data
-        ? ["week", "month", "year"].some(
-            (p) => data.analysis?.[p as "week" | "month" | "year"]?.status === "generating"
-          )
-        : false;
-      if (data && (isRecentlyRunning(data.email.runningAt) || isRecentlyRunning(data.dedup.runningAt) || analysisRunningOnLoad)) {
-        startPolling();
+      if (data && (isRecentlyRunning(data.email.runningAt) || isRecentlyRunning(data.dedup.runningAt) || isAnalysisRunning(data))) {
+        startPolling(async (_, stop) => {
+          const d = await fetchStatus();
+          if (d && !isRecentlyRunning(d.email.runningAt) && !isRecentlyRunning(d.dedup.runningAt) && !isAnalysisRunning(d)) stop();
+        }, 10_000, 36);
       }
     });
-    return () => stopPolling();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -106,7 +85,10 @@ export default function ScheduledSettingsPage() {
         );
         const s = await fetchStatus();
         if (s && (isRecentlyRunning(s.email.runningAt) || isRecentlyRunning(s.dedup.runningAt))) {
-          startPolling();
+          startPolling(async (_, stop) => {
+            const d = await fetchStatus();
+            if (d && !isRecentlyRunning(d.email.runningAt) && !isRecentlyRunning(d.dedup.runningAt) && !isAnalysisRunning(d)) stop();
+          }, 10_000, 36);
         }
       } else {
         setLastMsg(data.error ?? "Failed.");
@@ -133,17 +115,12 @@ export default function ScheduledSettingsPage() {
 
   const emailServerRunning    = isRecentlyRunning(status?.email.runningAt ?? null);
   const dedupServerRunning    = isRecentlyRunning(status?.dedup.runningAt ?? null);
-  const analysisServerRunning = ["week", "month", "year"].some(
-    (p) => status?.analysis?.[p as "week" | "month" | "year"]?.status === "generating"
-  );
+  const analysisServerRunning = isAnalysisRunning(status);
   const isAnyRunning = !!triggering || emailServerRunning || dedupServerRunning || analysisServerRunning;
 
-  // Most recent analysis run across all three periods
   const analysisLastRun = ["week", "month", "year"]
     .map((p) => status?.analysis?.[p as "week" | "month" | "year"]?.lastRun ?? null)
-    .filter(Boolean)
-    .sort()
-    .at(-1) ?? null;
+    .filter(Boolean).sort().at(-1) ?? null;
 
   const jobs = [
     {
@@ -183,23 +160,11 @@ export default function ScheduledSettingsPage() {
     },
   ];
 
-  const runAllLabel = isAnyRunning ? "Running…" : "Run All Jobs Now";
-
   return (
     <div className="max-w-lg mx-auto px-5 pb-10">
-      <div className="md:hidden sticky top-0 z-30 flex items-center pt-10 pb-3 gap-3"
-        style={{ background: "var(--color-background)" }}>
-        <button onClick={() => router.back()}
-          className="w-9 h-9 flex items-center justify-center rounded-xl"
-          style={{ background: "var(--color-surface-container)" }}>
-          <span className="material-symbols-outlined" style={{ color: "var(--color-on-surface-variant)" }}>arrow_back</span>
-        </button>
-        <h1 className="font-semibold" style={{ fontSize: 20 }}>Scheduled Tasks</h1>
-      </div>
+      <MobileSettingsHeader title="Scheduled Tasks" />
 
       <div className="flex flex-col gap-5 pt-4">
-
-        {/* Schedule banner */}
         <div className="rounded-2xl p-4 flex items-center gap-4"
           style={{ background: "var(--color-primary-fixed)", border: "1px solid var(--color-outline-variant)" }}>
           <span className="material-symbols-outlined" style={{ color: "var(--color-primary)", fontSize: 28, fontVariationSettings: "'FILL' 1" }}>schedule</span>
@@ -217,7 +182,6 @@ export default function ScheduledSettingsPage() {
           </div>
         </div>
 
-        {/* Not registered warning */}
         {!loading && !status?.registered && (
           <div className="rounded-2xl p-3 flex gap-3" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#f9a825", fontSize: 18, marginTop: 1 }}>warning</span>
@@ -227,7 +191,6 @@ export default function ScheduledSettingsPage() {
           </div>
         )}
 
-        {/* Result message */}
         {lastMsg && (
           <div className="rounded-2xl p-3 flex gap-3" style={{ background: "#e8f5e9", border: "1px solid #a5d6a7" }}>
             <span className="material-symbols-outlined flex-shrink-0" style={{ color: "#2e7d32", fontSize: 18 }}>check_circle</span>
@@ -235,7 +198,6 @@ export default function ScheduledSettingsPage() {
           </div>
         )}
 
-        {/* Job rows */}
         <div className="rounded-3xl overflow-hidden border" style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
           {jobs.map((job, i) => {
             const isRunning    = job.serverRunning || triggering === job.key || triggering === "all";
@@ -271,12 +233,7 @@ export default function ScheduledSettingsPage() {
                     onClick={() => cancel(job.key as "email" | "dedup" | "analysis")}
                     disabled={isCancelling}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
-                    style={{
-                      background: "#fdecea",
-                      color:      "#c62828",
-                      opacity:    isCancelling ? 0.5 : 1,
-                      cursor:     isCancelling ? "not-allowed" : "pointer",
-                    }}>
+                    style={{ background: "#fdecea", color: "#c62828", opacity: isCancelling ? 0.5 : 1, cursor: isCancelling ? "not-allowed" : "pointer" }}>
                     {isCancelling
                       ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin"
                           style={{ borderColor: "#c6282840", borderTopColor: "#c62828" }} />
@@ -289,12 +246,7 @@ export default function ScheduledSettingsPage() {
                     onClick={() => trigger(job.key)}
                     disabled={runDisabled}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium text-sm flex-shrink-0"
-                    style={{
-                      background: job.enabled ? job.bg : "var(--color-surface-container)",
-                      color:      job.enabled ? job.color : "var(--color-outline)",
-                      opacity:    runDisabled ? 0.4 : 1,
-                      cursor:     runDisabled ? "not-allowed" : "pointer",
-                    }}>
+                    style={{ background: job.enabled ? job.bg : "var(--color-surface-container)", color: job.enabled ? job.color : "var(--color-outline)", opacity: runDisabled ? 0.4 : 1, cursor: runDisabled ? "not-allowed" : "pointer" }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 15 }}>play_arrow</span>
                     Run
                   </button>
@@ -304,26 +256,18 @@ export default function ScheduledSettingsPage() {
           })}
         </div>
 
-        {/* Run all */}
         <button
           onClick={() => trigger("all")}
           disabled={isAnyRunning}
           className="w-full py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2"
-          style={{
-            background: "var(--color-primary)",
-            color:      "#fff",
-            fontSize:   15,
-            opacity:    isAnyRunning ? 0.4 : 1,
-            cursor:     isAnyRunning ? "not-allowed" : "pointer",
-          }}>
+          style={{ background: "var(--color-primary)", color: "#fff", fontSize: 15, opacity: isAnyRunning ? 0.4 : 1, cursor: isAnyRunning ? "not-allowed" : "pointer" }}>
           {(triggering === "all" || isAnyRunning)
             ? <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
                 style={{ borderColor: "rgba(255,255,255,0.4)", borderTopColor: "#fff" }} />
             : <span className="material-symbols-outlined" style={{ fontSize: 18 }}>play_circle</span>
           }
-          {runAllLabel}
+          {isAnyRunning ? "Running…" : "Run All Jobs Now"}
         </button>
-
       </div>
     </div>
   );
