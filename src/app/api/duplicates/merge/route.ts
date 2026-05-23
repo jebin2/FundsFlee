@@ -3,8 +3,7 @@ import { withSession } from "@/server/http/withSession";
 import { appendTransaction } from "@/lib/sheets";
 import { runMergeJob } from "@/server/jobs/mergeJob";
 import { log } from "@/lib/logger";
-import { todayISO } from "@/lib/date/iso";
-import type { Transaction } from "@/types";
+import { createMergePlaceholderTransaction } from "@/domain/transactions/factory";
 
 // POST /api/duplicates/merge
 // Body: { transactionIds: string[] }
@@ -16,23 +15,7 @@ export const POST = withSession("POST duplicates/merge", async (session, req: Ne
     return NextResponse.json({ error: "Need at least 2 transaction IDs to merge" }, { status: 400 });
   }
 
-  // Create a placeholder transaction that the UI can track
-  const now = new Date().toISOString();
-  const placeholder: Transaction = {
-    id:             crypto.randomUUID(),
-    date:           todayISO(),
-    time:           now.split("T")[1].slice(0, 5),
-    amount:         0,
-    merchant:       "Merging…",
-    category:       "Others",
-    payment_method: "Other",
-    source:         "merge",
-    status:         "merging",
-    // Encode source IDs so the background job can find them
-    notes:          `merge_source:${transactionIds.join(",")}`,
-    created_at:     now,
-    updated_at:     now,
-  };
+  const placeholder = createMergePlaceholderTransaction(transactionIds);
 
   await appendTransaction(session.accessToken, session.sheetId, placeholder);
 

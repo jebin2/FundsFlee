@@ -1,10 +1,6 @@
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+import { jsonPost } from "./http";
 
 export const parseApi = {
   text: (text: string, region: string) =>
-    fetch("/api/parse/text", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ text, region }),
-    }),
+    jsonPost("/api/parse/text", { text, region }),
 };

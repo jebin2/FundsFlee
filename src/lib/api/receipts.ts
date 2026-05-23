@@ -1,13 +1,9 @@
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+import { jsonPost } from "./http";
 
 export const receiptsApi = {
   upload: (formData: FormData) =>
     fetch("/api/receipts/upload", { method: "POST", body: formData }),
 
   process: (txId: string, region: string) =>
-    fetch("/api/receipts/process", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ txId, region }),
-    }),
+    jsonPost("/api/receipts/process", { txId, region }),
 };

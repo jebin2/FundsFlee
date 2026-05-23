@@ -8,7 +8,7 @@ import {
 import { runStatementParseJob } from "@/server/jobs/statementParseJob";
 import { todayISO } from "@/lib/date/iso";
 import { log } from "@/lib/logger";
-import type { Transaction } from "@/types";
+import { createQueuedStatementTransaction } from "@/domain/transactions/factory";
 
 export const maxDuration = 60;
 
@@ -26,27 +26,13 @@ export const POST = withSession("POST parse/statement/async", async (session, re
 
   const buffer   = Buffer.from(await file.arrayBuffer());
   const folderId = await getOrCreateReceiptsFolder(session.accessToken, session.sheetId);
-  const now      = new Date().toISOString();
   const filename = `statement_${todayISO()}_${Date.now()}.pdf`;
 
   const { viewUrl } = await uploadReceiptToDrive(
     session.accessToken, folderId, buffer, filename, "application/pdf"
   );
 
-  const placeholder: Transaction = {
-    id:             crypto.randomUUID(),
-    date:           todayISO(),
-    time:           now.split("T")[1].slice(0, 5),
-    amount:         0,
-    merchant:       "Bank Statement",
-    category:       "Others",
-    payment_method: "Other",
-    source:         "import",
-    status:         "queued",
-    receipt_url:    viewUrl,
-    created_at:     now,
-    updated_at:     now,
-  };
+  const placeholder = createQueuedStatementTransaction(viewUrl);
 
   await appendTransaction(session.accessToken, session.sheetId, placeholder);
   runStatementParseJob(session, placeholder.id).catch((err) => {

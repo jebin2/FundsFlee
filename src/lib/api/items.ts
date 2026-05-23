@@ -1,6 +1,5 @@
 import type { PendingSuggestion } from "@/types";
-
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+import { jsonPatch } from "./http";
 
 export const itemsApi = {
   getSuggestions: () => fetch("/api/items/suggestions"),
@@ -8,9 +7,5 @@ export const itemsApi = {
   normalize: () => fetch("/api/items/normalize", { method: "POST" }),
 
   resolveSuggestion: (s: Pick<PendingSuggestion, "key" | "field">, action: "accept" | "reject") =>
-    fetch("/api/items/suggestions", {
-      method: "PATCH",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ key: s.key, field: s.field, action }),
-    }),
+    jsonPatch("/api/items/suggestions", { key: s.key, field: s.field, action }),
 };

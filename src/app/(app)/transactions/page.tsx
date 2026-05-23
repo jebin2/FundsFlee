@@ -22,6 +22,7 @@ import { DuplicateGroupsList } from "@/features/transactions/components/Duplicat
 import { SuggestionsSheet } from "@/features/transactions/components/SuggestionsSheet";
 import { DuplicateGroupSheet } from "@/features/transactions/components/DuplicateGroupSheet";
 import { receiptsApi } from "@/lib/api/receipts";
+import { decodeMergeMetadata } from "@/domain/transactions/metadata";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function TransactionsContent() {
@@ -70,9 +71,7 @@ function TransactionsContent() {
     const ids = new Set<string>();
     for (const tx of transactions) {
       if (tx.source === "merge" && tx.status === "merging") {
-        tx.notes?.match(/merge_source:([^\s|]+)/)?.[1]
-          ?.split(",")
-          .forEach((id) => ids.add(id));
+        decodeMergeMetadata(tx.notes).forEach((id) => ids.add(id));
       }
     }
     return ids;

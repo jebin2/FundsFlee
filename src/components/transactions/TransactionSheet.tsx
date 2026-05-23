@@ -13,6 +13,8 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { transactionsApi, transactionUrl } from "@/lib/api/transactions";
 import { receiptsApi } from "@/lib/api/receipts";
 import { duplicatesApi } from "@/lib/api/duplicates";
+import { isInFlightStatus, isFailedStatus } from "@/domain/transactions/status";
+import { decodeMergeMetadata } from "@/domain/transactions/metadata";
 
 // ── InFlight placeholder ──────────────────────────────────────────────────────
 
@@ -53,7 +55,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
   const liveTx = useTransactionsStore((s) => s.transactions.find((t) => t.id === initialTx.id)) ?? initialTx;
   const [tx, setTx] = useState<Transaction>(liveTx);
   const [view, setView] = useState<"detail" | "edit">(
-    (liveTx.status === "failed" || liveTx.status === "merge_failed") ? "edit" : "detail"
+    isFailedStatus(liveTx.status) ? "edit" : "detail"
   );
   const [showReceiptItems, setShowReceiptItems] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -70,7 +72,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
 
   // Poll API while in-flight and online
   useEffect(() => {
-    if (!["queued", "processing", "merging"].includes(tx.status ?? "") || !isOnline) return;
+    if (!isInFlightStatus(tx.status) || !isOnline) return;
     const timer = setInterval(() => refresh(), 5000);
     return () => clearInterval(timer);
   }, [tx.status, isOnline, refresh]);
@@ -129,9 +131,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
     setRetrying(true);
     try {
       // Re-enqueue the same merge job using the stored source IDs
-      const res = await duplicatesApi.merge(
-        (tx.notes?.match(/merge_source:([^\s|]+)/)?.[1] ?? "").split(",").filter(Boolean)
-      );
+      const res = await duplicatesApi.merge(decodeMergeMetadata(tx.notes));
       if (!res.ok) throw new Error("Retry failed — please try again.");
       setTx((prev) => ({ ...prev, status: "merging" }));
       setView("detail");
@@ -142,8 +142,8 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
     }
   }
 
-  const isInFlight  = tx.status === "queued" || tx.status === "processing" || tx.status === "merging";
-  const isFailed    = tx.status === "failed" || tx.status === "merge_failed";
+  const isInFlight  = isInFlightStatus(tx.status);
+  const isFailed    = isFailedStatus(tx.status);
   const isMergeFail = tx.status === "merge_failed";
   const heroColor = isInFlight ? "var(--color-secondary)" : isFailed ? "var(--color-error)" : "var(--color-primary)";
 
