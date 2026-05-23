@@ -55,6 +55,7 @@ export default function EmailImportSettingsPage() {
     setLoading(false);
   }, [loadStatus, startPolling]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
   async function saveConfig(filters: string[], days: number) {
@@ -195,7 +196,7 @@ export default function EmailImportSettingsPage() {
                 </button>
               </div>
               <p style={{ fontSize: 12, color: "var(--color-outline)" }}>
-                Partial match — "hdfcbank" matches any sender whose address contains that text.
+                Partial match — &quot;hdfcbank&quot; matches any sender whose address contains that text.
               </p>
             </div>
           </div>

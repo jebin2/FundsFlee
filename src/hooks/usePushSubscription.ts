@@ -14,18 +14,19 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 }
 
 export function usePushSubscription() {
-  const [supported, setSupported] = useState(false);
+  const [supported] = useState(
+    () => typeof navigator !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && !!VAPID_PUBLIC_KEY
+  );
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
-    setSupported(true);
+    if (!supported) return;
     navigator.serviceWorker.ready.then(async (reg) => {
       const sub = await reg.pushManager.getSubscription();
       setSubscribed(!!sub);
     });
-  }, []);
+  }, [supported]);
 
   const subscribe = useCallback(async () => {
     if (!supported || !VAPID_PUBLIC_KEY) return;

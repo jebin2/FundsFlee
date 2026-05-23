@@ -102,7 +102,7 @@ export async function runEmailImportJob(session: SheetSession, { manual = false 
           status: skipReason === "parse_error" ? "failed" : "skipped",
           txIds: [],
         }).catch(() => {});
-        skipReason === "parse_error" ? result.failed++ : result.skipped++;
+        if (skipReason === "parse_error") { result.failed++; } else { result.skipped++; }
         continue;
       }
 

@@ -9,7 +9,7 @@ export function useFetchInterceptor(onUnauthorized: () => void) {
   // Keep a stable ref so the closure always calls the current callback,
   // even though the effect runs only once (fetchIntercepted guard).
   const onUnauthorizedRef = useRef(onUnauthorized);
-  onUnauthorizedRef.current = onUnauthorized;
+  useEffect(() => { onUnauthorizedRef.current = onUnauthorized; });
 
   useEffect(() => {
     if (fetchIntercepted) return;
@@ -34,5 +34,5 @@ export function useFetchInterceptor(onUnauthorized: () => void) {
       window.fetch = original;
       fetchIntercepted = false;
     };
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 }

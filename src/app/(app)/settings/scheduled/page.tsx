@@ -58,6 +58,7 @@ export default function ScheduledSettingsPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStatus().then((data) => {
       setLoading(false);
       if (data && (isRecentlyRunning(data.email.runningAt) || isRecentlyRunning(data.dedup.runningAt) || isAnalysisRunning(data))) {

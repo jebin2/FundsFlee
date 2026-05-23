@@ -31,7 +31,7 @@ export function useAsync<T>(
     }
   }, [fn]);
 
-  const reset = useCallback(() => setData(initialData), [initialData]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reset = useCallback(() => setData(initialData), [initialData]);
 
   return { data, loading, error, execute, reset };
 }

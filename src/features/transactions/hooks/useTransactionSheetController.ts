@@ -40,7 +40,12 @@ export function useTransactionSheetController(
   const { refresh } = useTransactions();
 
   const liveTx = useTransactionsStore((s) => s.transactions.find((t) => t.id === initialTx.id)) ?? initialTx;
-  const [tx, setTx] = useState<Transaction>(liveTx);
+  const [tx, setTx] = useState<Transaction>(initialTx);
+  const [prevLiveTx, setPrevLiveTx] = useState(initialTx);
+  if (liveTx !== prevLiveTx) {
+    setPrevLiveTx(liveTx);
+    setTx(liveTx);
+  }
   const [view, setView] = useState<"detail" | "edit">(
     isFailedStatus(liveTx.status) ? "edit" : "detail"
   );
@@ -48,8 +53,6 @@ export function useTransactionSheetController(
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => { setTx(liveTx); }, [liveTx]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";

@@ -9,7 +9,7 @@ export function usePoller(
   // Keep a stable ref so the interval always calls the current checkFn
   // even if it changes between renders (e.g. merchant selection changes).
   const checkFnRef = useRef(checkFn);
-  checkFnRef.current = checkFn;
+  useEffect(() => { checkFnRef.current = checkFn; });
 
   const stop = () => {
     if (intervalRef.current) {
@@ -25,7 +25,6 @@ export function usePoller(
       if (s !== "generating") stop();
     }, 5000);
     return stop;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   return stop;

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
-import { requestDuplicateDetection, runDuplicateDetection } from "@/server/services/duplicateDetectionService";
+import { runDuplicateDetection } from "@/server/services/duplicateDetectionService";
 
 export const POST = withSession("POST duplicates detect", async (session) => {
   // Check cooldown via requestDuplicateDetection — if within 1 hour, skip

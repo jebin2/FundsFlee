@@ -86,6 +86,7 @@ export function PullToRefresh({ onRefresh, children }: PullToRefreshProps) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          // eslint-disable-next-line react-hooks/refs
           transition: isPullingRef.current ? "none" : "height 0.3s ease",
         }}
       >

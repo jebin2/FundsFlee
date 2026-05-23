@@ -35,17 +35,18 @@ export function useOnboardingFlow(): OnboardingFlow {
   const [tags,     setTags]     = useState<string[]>([]);
   const [token,    setToken]    = useState("");
 
-  useEffect(() => {
-    if (step === "shortcut") void loadToken();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-
   async function loadToken() {
     const sid = sheetId || localStorage.getItem("sheetId") || "";
     const res = await fetch(`/api/user/token?sheetId=${sid}`);
     const data = await res.json();
     setToken(data.token);
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (step === "shortcut") void loadToken();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   async function initSheet() {
     setLoading(true);
