@@ -23,17 +23,19 @@ export function getGmailClient(accessToken: string) {
 }
 
 // Retry wrapper for Sheets API calls — handles 429 (rate limit) and transient 5xx.
-// Delays: 1s, 2s, 4s before giving up.
+// Quota (429) waits 65s to let the per-minute window reset; 5xx uses exponential backoff.
 export async function withSheetsRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
-      const code = (err as { code?: number })?.code;
-      const isRetryable = code === 429 || code === 500 || code === 503;
-      if (isRetryable && attempt < maxRetries) {
-        const delay = 1000 * Math.pow(2, attempt);
-        log.warn("sheets", `retry ${attempt + 1}/${maxRetries}`, { code, delayMs: delay });
+      const e = err as { code?: number | string; status?: number | string; response?: { status?: number } };
+      const status = Number(e.code ?? e.status ?? e.response?.status ?? 0);
+      const isQuota = status === 429;
+      const isTransient = status === 500 || status === 503;
+      if ((isQuota || isTransient) && attempt < maxRetries) {
+        const delay = isQuota ? 65_000 : 1000 * Math.pow(2, attempt);
+        log.warn("sheets", `retry ${attempt + 1}/${maxRetries}`, { status, delayMs: delay });
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
