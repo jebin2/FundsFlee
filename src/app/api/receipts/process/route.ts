@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
 import { processReceipt } from "@/server/services/receiptProcessingService";
 
-export const maxDuration = 300;
+export const maxDuration = 360;
 
 export const POST = withSession("POST receipts process", async (session, req) => {
   const { txId, region } = await req.json();
