@@ -9,7 +9,7 @@ export async function opencodeText(prompt: string, system: string): Promise<stri
   if (!submitRes.ok) throw new Error(`OpenCode submit failed: ${submitRes.status}`);
   const { id } = await submitRes.json();
 
-  const deadline = Date.now() + 300_000;
+  const deadline = Date.now() + 420_000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3000));
     const pollRes = await fetch(`${OPENCODE_API_URL}/api/tasks/${id}`);
@@ -25,5 +25,5 @@ export async function opencodeText(prompt: string, system: string): Promise<stri
     }
     if (task.status === "failed") throw new Error(`OpenCode task failed: ${task.error}`);
   }
-  throw new Error("OpenCode task timed out after 300s");
+  throw new Error("OpenCode task timed out after 420s");
 }
