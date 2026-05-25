@@ -92,25 +92,18 @@ export function useTransactionSheetController(
   async function retryAI() {
     if (retrying) return;
     setError(null);
-    setRetrying(true);
-    try {
-      const region = localStorage.getItem("region") ?? "";
-      let res: Response;
-      if (tx.source === "sms" || tx.source === "manual") {
-        res = await fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
-      } else if (tx.source === "import") {
-        res = await fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
-      } else {
-        res = await receiptsApi.process(tx.id, region);
-      }
-      if (!res.ok) throw new Error("Retry failed — please try again.");
-      setTx((prev) => ({ ...prev, status: "processing" }));
-      setView("detail");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Retry failed.");
-    } finally {
-      setRetrying(false);
+    const region = localStorage.getItem("region") ?? "";
+    let req: Promise<Response>;
+    if (tx.source === "sms" || tx.source === "manual") {
+      req = fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
+    } else if (tx.source === "import") {
+      req = fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
+    } else {
+      req = receiptsApi.process(tx.id, region);
     }
+    setTx((prev) => ({ ...prev, status: "processing" }));
+    setView("detail");
+    req.catch(() => setError("Retry failed — please try again."));
   }
 
   async function retryMerge() {

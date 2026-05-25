@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Transaction } from "@/types";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useTransactionsStore } from "@/store/transactionsStore";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import {
   filterAndSortTransactions,
@@ -29,6 +30,7 @@ function TransactionsContent() {
   const searchParams = useSearchParams();
   const isOnline = useOnlineStatus();
   const { transactions, total, hasMore, syncing, loadingMore, refresh, loadMore } = useTransactions();
+  const updateTransaction = useTransactionsStore((s) => s.updateTransaction);
   const [loading, setLoading] = useState(transactions.length === 0);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [search, setSearch] = useState("");
@@ -136,9 +138,9 @@ function TransactionsContent() {
                 onTransactionClick={setSelectedTx}
                 onResolveDuplicate={resolveDuplicate}
                 searchActive={!!search}
-                onRetryReceipt={async (txId) => {
-                  await receiptsApi.process(txId, region);
-                  loadData();
+                onRetryReceipt={(txId) => {
+                  updateTransaction(txId, { status: "queued" });
+                  receiptsApi.process(txId, region).catch(() => {});
                 }}
               />
             </ErrorBoundary>
