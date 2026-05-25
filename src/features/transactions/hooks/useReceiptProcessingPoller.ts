@@ -27,11 +27,11 @@ export function useReceiptProcessingPoller(
 
   const triggerProcessing = useCallback(
     async (txs: Transaction[]) => {
-      const queued = txs.filter((t) => t.status === "queued" && !processingRef.current.has(t.id));
-      for (const tx of queued) {
-        processingRef.current.add(tx.id);
-        processTransaction(tx, region).catch(() => processingRef.current.delete(tx.id));
-      }
+      if (processingRef.current.size > 0) return;
+      const tx = txs.find((t) => t.status === "queued" && !processingRef.current.has(t.id));
+      if (!tx) return;
+      processingRef.current.add(tx.id);
+      processTransaction(tx, region).finally(() => processingRef.current.delete(tx.id));
     },
     [region]
   );
@@ -53,7 +53,7 @@ export function useReceiptProcessingPoller(
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
-      }, 5000);
+      }, 15000);
     }
 
     if (!shouldPoll && pollRef.current) {
