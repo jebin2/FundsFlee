@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -17,10 +17,14 @@ import type { Transaction } from "@/types";
 export default function DashboardPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const { transactions, refresh } = useTransactions();
+  const { transactions, refresh, syncing } = useTransactions();
   // Show skeleton only when store is empty; if we already have data (from
   // local cache or a previous session) render it immediately and refresh quietly.
   const [loading, setLoading] = useState(transactions.length === 0);
+  // The total-spent amount always waits for the first server confirmation so
+  // stale local-cache data (which can span more rows than page 1) never flashes.
+  const [amountLoading, setAmountLoading] = useState(true);
+  const syncStartedRef = useRef(false);
   const [period, setPeriod] = useState<Period>("month");
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
@@ -34,6 +38,24 @@ export default function DashboardPage() {
     }
     refresh().finally(() => setLoading(false));
   }, [session, router, refresh]);
+
+  // Reveal the total only after the sync cycle completes (true→false transition).
+  // This prevents the cached-all-transactions total from briefly differing from
+  // the page-1 API total.
+  useEffect(() => {
+    if (syncing) {
+      syncStartedRef.current = true;
+    } else if (syncStartedRef.current) {
+      setAmountLoading(false);
+    }
+  }, [syncing]);
+
+  // Offline fallback: no sync will start, so reveal the cached total immediately.
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setAmountLoading(false);
+    }
+  }, []);
 
   const { from, to } = getPeriodRange(period);
   const filtered = transactions.filter(
@@ -83,7 +105,7 @@ export default function DashboardPage() {
       <div className="rounded-3xl p-6" style={{ background: "var(--color-primary)", boxShadow: "0 8px 24px rgba(31,16,142,0.25)" }}>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>Total Spent</p>
         <p style={{ fontSize: 40, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} className="mt-1">
-          {loading && transactions.length === 0 ? "…" : formatINR(totalSpent)}
+          {amountLoading ? "…" : formatINR(totalSpent)}
         </p>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }} className="mt-2">
           {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
