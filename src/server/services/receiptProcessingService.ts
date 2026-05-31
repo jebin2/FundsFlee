@@ -89,7 +89,7 @@ export async function processReceipt(
 
     if (items.length > 1) {
       log.info("receipt", "expanding to multiple rows", { txId, itemCount: items.length });
-      await expandItemsToRows(session, receiptId, {
+      await expandItemsToRows(session, txId, {
         date: parsed.date,
         time: parsed.time,
         merchant: parsed.merchant,
@@ -103,7 +103,7 @@ export async function processReceipt(
       }, items, now, totalAmount);
     } else {
       const singleItem = items[0];
-      await updateTransactionField(session.accessToken, session.sheetId, receiptId, {
+      await updateTransactionField(session.accessToken, session.sheetId, txId, {
         date:           parsed.date,
         time:           parsed.time,
         amount:         totalAmount,
