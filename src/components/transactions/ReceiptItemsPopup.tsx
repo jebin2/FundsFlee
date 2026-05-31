@@ -11,6 +11,7 @@ import { AddInfoSheet } from "./AddInfoSheet";
 export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: string; source?: string; onClose: () => void }) {
   // Try the already-loaded store first (covers all loaded pages, no network needed)
   const storeTransactions = useTransactionsStore((s) => s.transactions);
+  const updateTransaction  = useTransactionsStore((s) => s.updateTransaction);
 
   const storeItems = useMemo(
     () => storeTransactions
@@ -122,7 +123,10 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
           } as Transaction}
           receiptId={receiptId}
           onClose={() => setShowAddInfo(false)}
-          onSubmitted={onClose}
+          onSubmitted={() => {
+            items.forEach((item) => updateTransaction(item.id, { status: "processing" }));
+            onClose();
+          }}
         />
       )}
     </div>
