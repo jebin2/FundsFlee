@@ -50,7 +50,7 @@ export async function expandItemsToRows(
         id: crypto.randomUUID(),
         ...base,
         amount: diff,
-        item_name: "Taxes & Fees",
+        item_name: "Other Items",
         quantity: undefined,
         notes: undefined,
         status: "done",

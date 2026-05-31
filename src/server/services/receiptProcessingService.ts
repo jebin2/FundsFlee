@@ -81,6 +81,8 @@ export async function processReceipt(
     const receiptId = txId;
     const now = new Date().toISOString();
     const items = parsed.items ?? [];
+    // Bank-reported amount is ground truth; OCR may miss items when confidence is low
+    const totalAmount = placeholder.amount || parsed.amount;
 
     log.info("receipt", "AI parsed", { txId, merchant: parsed.merchant, amount: parsed.amount, itemCount: items.length });
 
@@ -97,13 +99,13 @@ export async function processReceipt(
         source: "receipt",
         receipt_url: placeholder.receipt_url,
         receipt_id: receiptId,
-      }, items, now, parsed.amount);
+      }, items, now, totalAmount);
     } else {
       const singleItem = items[0];
       await updateTransactionField(session.accessToken, session.sheetId, receiptId, {
         date:           parsed.date,
         time:           parsed.time,
-        amount:         parsed.amount,
+        amount:         totalAmount,
         merchant:       parsed.merchant,
         category:       parsed.category,
         subcategory:    parsed.subcategory,
@@ -119,7 +121,7 @@ export async function processReceipt(
 
     const meta = await getMetaValues(session.accessToken, session.sheetId).catch(() => ({} as Record<string, string>));
     if (meta.push_subscription) {
-      const total = items.length > 1 ? items.reduce((s, i) => s + i.price, 0) : parsed.amount;
+      const total = totalAmount;
       sendPushNotification(meta.push_subscription, {
         title: `${parsed.merchant || "Receipt"} processed`,
         body: `${items.length || 1} item${(items.length || 1) !== 1 ? "s" : ""} · ₹${Math.round(total).toLocaleString("en-IN")}`,
