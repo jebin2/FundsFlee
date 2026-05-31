@@ -224,17 +224,19 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                 </a>
               )}
 
-              <button
-                onClick={() => setShowAddInfo(true)}
-                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border w-full text-left"
-                style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)", cursor: "pointer" }}
-              >
-                <span className="material-symbols-outlined" style={{ color: "var(--color-secondary)", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>
-                  note_add
-                </span>
-                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-secondary)" }}>Add more info</p>
-                <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-outline)", fontSize: 18 }}>chevron_right</span>
-              </button>
+              {!tx.receipt_id && (
+                <button
+                  onClick={() => setShowAddInfo(true)}
+                  className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border w-full text-left"
+                  style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)", cursor: "pointer" }}
+                >
+                  <span className="material-symbols-outlined" style={{ color: "var(--color-secondary)", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>
+                    note_add
+                  </span>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-secondary)" }}>Add more info</p>
+                  <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-outline)", fontSize: 18 }}>chevron_right</span>
+                </button>
+              )}
             </div>
           )}
         </div>
