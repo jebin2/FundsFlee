@@ -170,22 +170,24 @@ export async function updateTransactionField(
   }
 }
 
-// Fetch every transaction across all pages — for server-side analysis jobs only.
+// Fetch every transaction in one request — for server-side analysis jobs only.
 // Not suitable for client-side rendering; use getTransactions() with pagination instead.
 export async function getAllTransactions(
   accessToken: string,
-  sheetId: string,
-  pageSize = PAGE_SIZE
+  sheetId: string
 ): Promise<Transaction[]> {
-  const all: Transaction[] = [];
-  let page = 1;
-  while (true) {
-    const { transactions, hasMore } = await getTransactions(accessToken, sheetId, page, pageSize);
-    all.push(...transactions);
-    if (!hasMore) break;
-    page++;
-  }
-  return all;
+  const sheets = getSheetsClient(accessToken);
+  const res = await withSheetsRetry(() =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `transactions!A2:${LAST_COL}`,
+    })
+  );
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((r) => r[0])
+    .filter((r) => !isDeletedRow(r as string[]))
+    .map((r) => rowToTransaction(r as string[]));
 }
 
 // Re-export DATA_RANGE so callers that already import from this file still work
