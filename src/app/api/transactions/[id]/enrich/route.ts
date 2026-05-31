@@ -23,6 +23,8 @@ export const POST = withSession<{ id: string }>("POST transaction enrich", async
     try { txContext = JSON.parse(raw) as TxContext; } catch { /* ignore malformed */ }
   }
 
+  const receiptId = formData.get("receiptId") as string | null ?? undefined;
+
   let imageBase64: string | undefined;
   let imageMimeType: ValidMimeType | undefined;
   if (image) {
@@ -35,6 +37,7 @@ export const POST = withSession<{ id: string }>("POST transaction enrich", async
 
   runEnrichTransactionJob(session, {
     txId: id,
+    receiptId,
     text: text?.trim() || undefined,
     imageBase64,
     imageMimeType,

@@ -5,11 +5,12 @@ import type { Transaction } from "@/types";
 
 interface AddInfoSheetProps {
   tx: Transaction;
+  receiptId?: string;  // when set, replaces the receipt group instead of enriching a single tx
   onClose: () => void;
   onSubmitted: () => void;
 }
 
-export function AddInfoSheet({ tx, onClose, onSubmitted }: AddInfoSheetProps) {
+export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoSheetProps) {
   const [text, setText] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -54,7 +55,8 @@ export function AddInfoSheet({ tx, onClose, onSubmitted }: AddInfoSheetProps) {
         payment_method: tx.payment_method,
         notes:          tx.notes,
       }));
-      const res = await fetch(`/api/transactions/${tx.id}/enrich`, { method: "POST", body: fd });
+      if (receiptId) fd.append("receiptId", receiptId);
+      const res = await fetch(`/api/transactions/${receiptId ?? tx.id}/enrich`, { method: "POST", body: fd });
       if (!res.ok) throw new Error("Failed");
       onSubmitted();
     } catch {
@@ -84,7 +86,7 @@ export function AddInfoSheet({ tx, onClose, onSubmitted }: AddInfoSheetProps) {
           </button>
           <div className="flex-1 min-w-0">
             <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--color-on-surface)" }}>Add more info</h3>
-            <p style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>AI will update this transaction in the background</p>
+            <p style={{ fontSize: 12, color: "var(--color-on-surface-variant)" }}>{receiptId ? "AI will replace the receipt items in the background" : "AI will update this transaction in the background"}</p>
           </div>
           <button
             onClick={handleSubmit}

@@ -1,4 +1,4 @@
-import { updateTransactionField, getOrCreateReceiptsFolder, uploadReceiptToDrive } from "@/lib/sheets";
+import { updateTransactionField, getOrCreateReceiptsFolder, uploadReceiptToDrive, getAllTransactions, appendTransaction } from "@/lib/sheets";
 import { runTextParseJob } from "@/server/jobs/textParseJob";
 import { processReceipt } from "@/server/services/receiptProcessingService";
 import { log } from "@/lib/logger";
@@ -16,6 +16,7 @@ export interface TxContext {
 
 export interface EnrichInput {
   txId: string;
+  receiptId?: string;  // when set, replace the entire receipt group with fresh AI parse
   text?: string;
   imageBase64?: string;
   imageMimeType?: string;
@@ -40,7 +41,34 @@ export async function runEnrichTransactionJob(
   session: SheetSession,
   input: EnrichInput
 ): Promise<void> {
-  const { txId, text, imageBase64, imageMimeType, region = "", txContext } = input;
+  let { txId, receiptId, text, imageBase64, imageMimeType, region = "", txContext } = input;
+
+  if (receiptId) {
+    log.info("enrich", "receipt retry — clearing group", { receiptId });
+    const all = await getAllTransactions(session.accessToken, session.sheetId);
+    const groupItems = all.filter((t) => t.receipt_id === receiptId && !t.deleted);
+    for (const item of groupItems) {
+      await updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true });
+    }
+    const now = new Date().toISOString();
+    txId = crypto.randomUUID();
+    await appendTransaction(session.accessToken, session.sheetId, {
+      id: txId,
+      merchant:       txContext?.merchant ?? "",
+      amount:         txContext?.amount ?? 0,
+      date:           txContext?.date ?? now.slice(0, 10),
+      time:           txContext?.time ?? "",
+      payment_method: (txContext?.payment_method ?? "UPI") as PaymentMethod,
+      category:       "",
+      source:         "receipt",
+      receipt_id:     receiptId,
+      status:         "processing",
+      created_at:     now,
+      updated_at:     now,
+    });
+    log.info("enrich", "receipt retry — placeholder created", { txId, receiptId });
+  }
+
   log.info("enrich", "started", { txId });
 
   try {

@@ -6,6 +6,7 @@ import { formatINR } from "@/components/TransactionRow";
 import { useTransactionsStore } from "@/store/transactionsStore";
 import { getLocalTransactions } from "@/lib/offline";
 import { useEffect, useState } from "react";
+import { AddInfoSheet } from "./AddInfoSheet";
 
 export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: string; source?: string; onClose: () => void }) {
   // Try the already-loaded store first (covers all loaded pages, no network needed)
@@ -22,6 +23,7 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
   const [extraItems, setExtraItems] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(storeItems.length === 0);
   const [fromCache, setFromCache] = useState(false);
+  const [showAddInfo, setShowAddInfo] = useState(false);
 
   useEffect(() => {
     // Only fetch from IndexedDB if the store has no matching items
@@ -91,8 +93,38 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
               <p style={{ fontSize: 16, fontWeight: 700, color: "var(--color-primary)" }}>{formatINR(total)}</p>
             </div>
           )}
+          {!loading && (
+            <button
+              onClick={() => setShowAddInfo(true)}
+              className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border w-full text-left mt-1"
+              style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)", cursor: "pointer" }}
+            >
+              <span className="material-symbols-outlined" style={{ color: "var(--color-secondary)", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>note_add</span>
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-secondary)" }}>Add more info</p>
+              <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-outline)", fontSize: 18 }}>chevron_right</span>
+            </button>
+          )}
         </div>
       </div>
+      {showAddInfo && items.length > 0 && (
+        <AddInfoSheet
+          tx={{
+            id:             receiptId,
+            merchant:       items[0].merchant,
+            amount:         total,
+            date:           items[0].date,
+            time:           items[0].time,
+            payment_method: items[0].payment_method,
+            category:       items[0].category,
+            source:         "receipt",
+            created_at:     items[0].created_at,
+            updated_at:     items[0].updated_at,
+          } as Transaction}
+          receiptId={receiptId}
+          onClose={() => setShowAddInfo(false)}
+          onSubmitted={onClose}
+        />
+      )}
     </div>
   );
 }
