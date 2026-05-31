@@ -17,6 +17,11 @@ export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoShe
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Timestamp of the last time we opened the file picker. On mobile, returning
+  // from the camera/gallery fires a synthetic click on the backdrop — we ignore
+  // close events for 1 s after the picker opens to prevent the sheet from
+  // closing before the user can tap Update.
+  const pickerOpenedAt = useRef(0);
 
   // Revoke Blob URL when it changes or on unmount to avoid memory leaks.
   useEffect(() => {
@@ -27,6 +32,16 @@ export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoShe
     const file = e.target.files?.[0] ?? null;
     setImage(file);
     setImagePreview(file ? URL.createObjectURL(file) : null);
+  }
+
+  function openFilePicker() {
+    pickerOpenedAt.current = Date.now();
+    fileRef.current?.click();
+  }
+
+  function handleBackdropClose() {
+    if (Date.now() - pickerOpenedAt.current < 1000) return;
+    onClose();
   }
 
   function removeImage() {
@@ -67,7 +82,7 @@ export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoShe
 
   return (
     <>
-      <div className="fixed inset-0 z-[80]" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose} onClickCapture={(e) => e.stopPropagation()} />
+      <div className="fixed inset-0 z-[80]" style={{ background: "rgba(0,0,0,0.4)" }} onClick={handleBackdropClose} onClickCapture={(e) => e.stopPropagation()} />
       <div
         className="fixed inset-x-0 bottom-0 z-[90] flex flex-col rounded-t-3xl overflow-hidden md:left-1/2 md:right-auto md:w-full md:max-w-2xl md:-translate-x-1/2"
         style={{ background: "var(--color-surface)", maxHeight: "85dvh" }}
@@ -160,7 +175,7 @@ export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoShe
               </div>
             ) : (
               <button
-                onClick={() => fileRef.current?.click()}
+                onClick={openFilePicker}
                 className="flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl border"
                 style={{
                   borderColor: "var(--color-outline-variant)",
