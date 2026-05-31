@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withSession } from "@/server/http/withSession";
-import { runEnrichTransactionJob, type TxContext } from "@/server/jobs/enrichTransactionJob";
+import { prepareReceiptRetry, runEnrichTransactionJob, type TxContext } from "@/server/jobs/enrichTransactionJob";
 
 const VALID_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type ValidMimeType = typeof VALID_TYPES[number];
@@ -35,8 +35,15 @@ export const POST = withSession<{ id: string }>("POST transaction enrich", async
     imageMimeType = image.type as ValidMimeType;
   }
 
+  // For receipt retries, soft-delete old items and create the new placeholder *before*
+  // returning so the client's refresh() sees the "processing" state immediately.
+  let workTxId = id;
+  if (receiptId) {
+    workTxId = await prepareReceiptRetry(session, receiptId, txContext);
+  }
+
   runEnrichTransactionJob(session, {
-    txId: id,
+    txId: workTxId,
     receiptId,
     text: text?.trim() || undefined,
     imageBase64,

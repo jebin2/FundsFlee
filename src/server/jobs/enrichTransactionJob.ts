@@ -24,6 +24,40 @@ export interface EnrichInput {
   txContext?: TxContext;
 }
 
+/** Soft-deletes all existing group items and appends a fresh "processing" placeholder.
+ *  Returns the new placeholder txId. Call this in the route handler (before returning)
+ *  so the client can refresh and immediately see the processing state. */
+export async function prepareReceiptRetry(
+  session: SheetSession,
+  receiptId: string,
+  txContext: TxContext | undefined,
+): Promise<string> {
+  log.info("enrich", "receipt retry — clearing group", { receiptId });
+  const all = await getAllTransactions(session.accessToken, session.sheetId);
+  const groupItems = all.filter((t) => t.receipt_id === receiptId && !t.deleted);
+  for (const item of groupItems) {
+    await updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true });
+  }
+  const now = new Date().toISOString();
+  const txId = crypto.randomUUID();
+  await appendTransaction(session.accessToken, session.sheetId, {
+    id: txId,
+    merchant:       txContext?.merchant ?? "",
+    amount:         txContext?.amount ?? 0,
+    date:           txContext?.date ?? now.slice(0, 10),
+    time:           txContext?.time ?? "",
+    payment_method: (txContext?.payment_method ?? "UPI") as PaymentMethod,
+    category:       "",
+    source:         "receipt",
+    receipt_id:     receiptId,
+    status:         "processing",
+    created_at:     now,
+    updated_at:     now,
+  });
+  log.info("enrich", "receipt retry — placeholder created", { txId, receiptId });
+  return txId;
+}
+
 function buildEnrichedRawInput(ctx: TxContext | undefined, userText: string): string {
   if (!ctx) return userText;
   const lines = [
@@ -41,33 +75,7 @@ export async function runEnrichTransactionJob(
   session: SheetSession,
   input: EnrichInput
 ): Promise<void> {
-  let { txId, receiptId, text, imageBase64, imageMimeType, region = "", txContext } = input;
-
-  if (receiptId) {
-    log.info("enrich", "receipt retry — clearing group", { receiptId });
-    const all = await getAllTransactions(session.accessToken, session.sheetId);
-    const groupItems = all.filter((t) => t.receipt_id === receiptId && !t.deleted);
-    for (const item of groupItems) {
-      await updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true });
-    }
-    const now = new Date().toISOString();
-    txId = crypto.randomUUID();
-    await appendTransaction(session.accessToken, session.sheetId, {
-      id: txId,
-      merchant:       txContext?.merchant ?? "",
-      amount:         txContext?.amount ?? 0,
-      date:           txContext?.date ?? now.slice(0, 10),
-      time:           txContext?.time ?? "",
-      payment_method: (txContext?.payment_method ?? "UPI") as PaymentMethod,
-      category:       "",
-      source:         "receipt",
-      receipt_id:     receiptId,
-      status:         "processing",
-      created_at:     now,
-      updated_at:     now,
-    });
-    log.info("enrich", "receipt retry — placeholder created", { txId, receiptId });
-  }
+  const { txId, receiptId, text, imageBase64, imageMimeType, region = "", txContext } = input;
 
   log.info("enrich", "started", { txId });
 
