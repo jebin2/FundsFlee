@@ -18,6 +18,7 @@ type ValidReceiptMimeType = typeof VALID_RECEIPT_MIME_TYPES[number];
 interface ProcessReceiptRequest {
   txId: string;
   region?: string;
+  receiptGroupId?: string;  // when set, use this as receipt_id for item grouping (retry flow)
   /** Fields to use when the AI leaves them blank (e.g. merchant not visible in photo). */
   fallback?: {
     merchant?: string;
@@ -78,7 +79,7 @@ export async function processReceipt(
       if (!parsed.payment_method) parsed.payment_method = request.fallback.payment_method ?? parsed.payment_method;
     }
 
-    const receiptId = txId;
+    const receiptId = request.receiptGroupId ?? txId;
     const now = new Date().toISOString();
     const items = parsed.items ?? [];
     // Bank-reported amount is ground truth; OCR may miss items when confidence is low

@@ -84,6 +84,7 @@ export async function runEnrichTransactionJob(
       const result = await processReceipt(session, {
         txId,
         region,
+        receiptGroupId: receiptId,  // preserve original receipt_id grouping on retry
         fallback: txContext ? {
           merchant:       txContext.merchant,
           payment_method: txContext.payment_method as PaymentMethod,
@@ -99,7 +100,7 @@ export async function runEnrichTransactionJob(
     }
   } catch (err) {
     log.error("enrich", "failed", err, { txId });
-    await updateTransactionField(session.accessToken, session.sheetId, txId, { status: "done" }).catch(() => {});
+    await updateTransactionField(session.accessToken, session.sheetId, txId, { status: "failed" }).catch(() => {});
   }
 
   log.info("enrich", "done", { txId });
