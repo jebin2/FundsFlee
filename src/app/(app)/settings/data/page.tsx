@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Transaction } from "@/types";
@@ -12,6 +12,14 @@ export default function DataSettingsPage() {
   const { data: session } = useSession();
   const { transactions } = useTransactions();
   const [exporting, setExporting] = useState(false);
+  const [receiptsFolderId, setReceiptsFolderId] = useState("");
+
+  useEffect(() => {
+    fetch("/api/user/profile")
+      .then((r) => r.json())
+      .then((d) => { if (d.receipts_folder_id) setReceiptsFolderId(d.receipts_folder_id); })
+      .catch(() => {});
+  }, []);
   async function exportCSV() {
     setExporting(true);
     try {
@@ -62,6 +70,20 @@ export default function DataSettingsPage() {
       loading: false,
       color: "#2e7d32",
       bg: "#e8f5e9",
+    },
+    {
+      icon: "folder_open",
+      label: "Open in Drive",
+      sub: "View receipt images in Google Drive",
+      action: () => {
+        const url = receiptsFolderId
+          ? `https://drive.google.com/drive/folders/${receiptsFolderId}`
+          : "https://drive.google.com/drive/my-drive";
+        window.open(url, "_blank");
+      },
+      loading: false,
+      color: "#1565c0",
+      bg: "#e3f2fd",
     },
   ];
 

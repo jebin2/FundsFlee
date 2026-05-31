@@ -16,6 +16,7 @@ export const GET = withSession("GET profile", async (session) => {
     shortcut_token: meta.shortcut_token ?? "",
     shortcut_last_used: meta.shortcut_last_used ?? "",
     sheet_url: meta.sheet_url ?? "",
+    receipts_folder_id: meta.receipts_folder_id ?? "",
   });
 });
 
