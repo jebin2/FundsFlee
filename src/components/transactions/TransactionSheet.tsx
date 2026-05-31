@@ -86,7 +86,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
   return (
     <>
       {/* Backdrop — z-[60] covers the bottom nav (z-50) so nav is unreachable while sheet is open */}
-      <div className="fixed inset-0 z-[60]" style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
+      <div className="fixed inset-0 z-[60]" style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", touchAction: "none" }}
         onClick={onClose} />
 
       {/* Sheet — z-[70] sits above the backdrop */}
@@ -145,7 +145,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
           )}
         </div>
 
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto flex-1" style={{ overscrollBehaviorY: "contain" }}>
           {isInFlight && <InFlightView status={tx.status!} />}
 
           {!isInFlight && view === "edit" && (
