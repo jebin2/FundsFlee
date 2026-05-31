@@ -2,6 +2,7 @@ import { updateTransactionField, getOrCreateReceiptsFolder, uploadReceiptToDrive
 import { runTextParseJob } from "@/server/jobs/textParseJob";
 import { processReceipt } from "@/server/services/receiptProcessingService";
 import { log } from "@/lib/logger";
+import type { PaymentMethod } from "@/types";
 import type { SheetSession } from "@/server/services/types";
 
 export interface TxContext {
@@ -28,9 +29,9 @@ function buildEnrichedRawInput(ctx: TxContext | undefined, userText: string): st
     `Merchant: ${ctx.merchant}`,
     `Amount: ₹${ctx.amount}`,
     `Date: ${ctx.date}`,
-    ctx.time        ? `Time: ${ctx.time}`           : "",
+    ctx.time  ? `Time: ${ctx.time}`   : "",
     `Payment: ${ctx.payment_method}`,
-    ctx.notes       ? `Notes: ${ctx.notes}`          : "",
+    ctx.notes ? `Notes: ${ctx.notes}` : "",
   ].filter(Boolean);
   return `${lines.join("\n")}\n\nUser added:\n${userText}`;
 }
@@ -45,17 +46,23 @@ export async function runEnrichTransactionJob(
   try {
     if (imageBase64 && imageMimeType) {
       const folderId = await getOrCreateReceiptsFolder(session.accessToken, session.sheetId);
-      const buffer = Buffer.from(imageBase64, "base64");
-      const ext = imageMimeType.split("/")[1] ?? "jpg";
+      const buffer   = Buffer.from(imageBase64, "base64");
+      const ext      = imageMimeType.split("/")[1] ?? "jpg";
       const { viewUrl } = await uploadReceiptToDrive(
         session.accessToken, folderId, buffer,
         `enrich-${txId}-${Date.now()}.${ext}`, imageMimeType
       );
       await updateTransactionField(session.accessToken, session.sheetId, txId, { receipt_url: viewUrl });
-      const result = await processReceipt(session, { txId, region });
+      const result = await processReceipt(session, {
+        txId,
+        region,
+        fallback: txContext ? {
+          merchant:       txContext.merchant,
+          payment_method: txContext.payment_method as PaymentMethod,
+        } : undefined,
+      });
       if ("error" in result) {
         log.error("enrich", "processReceipt returned error", undefined, { txId, error: result.error });
-        return;
       }
     } else if (text) {
       const combined = buildEnrichedRawInput(txContext, text);
@@ -63,9 +70,8 @@ export async function runEnrichTransactionJob(
       await runTextParseJob(session, txId, region);
     }
   } catch (err) {
-    log.error("enrich", "failed before downstream job", err, { txId });
+    log.error("enrich", "failed", err, { txId });
     await updateTransactionField(session.accessToken, session.sheetId, txId, { status: "done" }).catch(() => {});
-    return;
   }
 
   log.info("enrich", "done", { txId });

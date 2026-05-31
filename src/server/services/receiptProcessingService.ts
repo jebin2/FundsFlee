@@ -9,6 +9,7 @@ import {
 import { expandItemsToRows, itemQuantity, unitPriceNote } from "./expandItems";
 import { sendPushNotification } from "@/lib/push";
 import { log } from "@/lib/logger";
+import type { PaymentMethod } from "@/types";
 import type { SheetSession } from "./types";
 
 const VALID_RECEIPT_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -17,6 +18,11 @@ type ValidReceiptMimeType = typeof VALID_RECEIPT_MIME_TYPES[number];
 interface ProcessReceiptRequest {
   txId: string;
   region?: string;
+  /** Fields to use when the AI leaves them blank (e.g. merchant not visible in photo). */
+  fallback?: {
+    merchant?: string;
+    payment_method?: PaymentMethod;
+  };
 }
 
 type ProcessReceiptResult =
@@ -66,6 +72,11 @@ export async function processReceipt(
       request.region,
       todayISO()
     );
+
+    if (request.fallback) {
+      if (!parsed.merchant)       parsed.merchant       = request.fallback.merchant       ?? parsed.merchant;
+      if (!parsed.payment_method) parsed.payment_method = request.fallback.payment_method ?? parsed.payment_method;
+    }
 
     const receiptId = txId;
     const now = new Date().toISOString();
