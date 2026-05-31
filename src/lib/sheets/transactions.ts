@@ -126,15 +126,24 @@ export async function getTransactions(
   return { transactions, total: visible, hasMore };
 }
 
-// Only searches the most recent page — safe for recently-created rows
-// (e.g. receipt placeholders). Do not use to look up arbitrary old transactions.
 export async function getTransactionById(
   accessToken: string,
   sheetId: string,
   txId: string
 ): Promise<Transaction | null> {
-  const { transactions } = await getTransactions(accessToken, sheetId);
-  return transactions.find((t) => t.id === txId) ?? null;
+  const sheets = getSheetsClient(accessToken);
+  const indexMap = await getRowIndexMap(sheets, sheetId);
+  const rowNumber = indexMap.get(txId);
+  if (!rowNumber) return null;
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `transactions!A${rowNumber}:${LAST_COL}${rowNumber}`,
+  });
+
+  const row = res.data.values?.[0];
+  if (!row?.[0] || isDeletedRow(row as string[])) return null;
+  return rowToTransaction(row as string[]);
 }
 
 export async function updateTransactionField(
