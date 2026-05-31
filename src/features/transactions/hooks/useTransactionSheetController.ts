@@ -19,6 +19,8 @@ export interface TransactionSheetController {
   setView: (v: "detail" | "edit") => void;
   showReceiptItems: boolean;
   setShowReceiptItems: (v: boolean) => void;
+  showAddInfo: boolean;
+  setShowAddInfo: (v: boolean) => void;
   deleting: boolean;
   retrying: boolean;
   error: string | null;
@@ -29,6 +31,7 @@ export interface TransactionSheetController {
   retryAI: () => Promise<void>;
   retryMerge: () => Promise<void>;
   onTxUpdated: (updated: Transaction) => void;
+  handleEnrichSubmitted: () => void;
 }
 
 export function useTransactionSheetController(
@@ -41,15 +44,21 @@ export function useTransactionSheetController(
 
   const liveTx = useTransactionsStore((s) => s.transactions.find((t) => t.id === initialTx.id)) ?? initialTx;
   const [tx, setTx] = useState<Transaction>(initialTx);
+  const [view, setView] = useState<"detail" | "edit">(
+    isFailedStatus(liveTx.status) ? "edit" : "detail"
+  );
   const [prevLiveTx, setPrevLiveTx] = useState(initialTx);
   if (liveTx !== prevLiveTx) {
     setPrevLiveTx(liveTx);
     setTx(liveTx);
+    // If tx transitions to failed while the sheet is open (e.g. after enrichment),
+    // flip to edit view so the error UI is visible instead of a blank content area.
+    if (isFailedStatus(liveTx.status) && view !== "edit") {
+      setView("edit");
+    }
   }
-  const [view, setView] = useState<"detail" | "edit">(
-    isFailedStatus(liveTx.status) ? "edit" : "detail"
-  );
   const [showReceiptItems, setShowReceiptItems] = useState(false);
+  const [showAddInfo, setShowAddInfo] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,13 +136,19 @@ export function useTransactionSheetController(
     setView("detail");
   }
 
+  function handleEnrichSubmitted() {
+    setShowAddInfo(false);
+    setTx((prev) => ({ ...prev, status: "processing" }));
+  }
+
   return {
     tx, view, setView,
     showReceiptItems, setShowReceiptItems,
+    showAddInfo, setShowAddInfo,
     deleting, retrying, error,
     isInFlight: isInFlightStatus(tx.status),
     isFailed: isFailedStatus(tx.status),
     isMergeFail: tx.status === "merge_failed",
-    handleDelete, retryAI, retryMerge, onTxUpdated,
+    handleDelete, retryAI, retryMerge, onTxUpdated, handleEnrichSubmitted,
   };
 }

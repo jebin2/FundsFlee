@@ -5,6 +5,7 @@ import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
 import { EditForm, type EditFormHandle } from "@/components/transactions/EditForm";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
+import { AddInfoSheet } from "@/components/transactions/AddInfoSheet";
 import { useTransactionSheetController } from "@/features/transactions/hooks/useTransactionSheetController";
 
 function InFlightView({ status }: { status: string }) {
@@ -38,9 +39,10 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
   const {
     tx, view, setView,
     showReceiptItems, setShowReceiptItems,
+    showAddInfo, setShowAddInfo,
     deleting, retrying, error,
     isInFlight, isFailed, isMergeFail,
-    handleDelete, retryAI, retryMerge, onTxUpdated,
+    handleDelete, retryAI, retryMerge, onTxUpdated, handleEnrichSubmitted,
   } = useTransactionSheetController(initialTx, onClose);
 
   const heroColor = isInFlight ? "var(--color-secondary)" : isFailed ? "var(--color-error)" : "var(--color-primary)";
@@ -221,6 +223,18 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                   <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-outline)", fontSize: 18 }}>open_in_new</span>
                 </a>
               )}
+
+              <button
+                onClick={() => setShowAddInfo(true)}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border w-full text-left"
+                style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)", cursor: "pointer" }}
+              >
+                <span className="material-symbols-outlined" style={{ color: "var(--color-secondary)", fontSize: 20, fontVariationSettings: "'FILL' 1" }}>
+                  note_add
+                </span>
+                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-secondary)" }}>Add more info</p>
+                <span className="material-symbols-outlined ml-auto" style={{ color: "var(--color-outline)", fontSize: 18 }}>chevron_right</span>
+              </button>
             </div>
           )}
         </div>
@@ -228,6 +242,10 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
 
       {showReceiptItems && tx.receipt_id && (
         <ReceiptItemsPopup receiptId={tx.receipt_id} source={tx.source} onClose={() => setShowReceiptItems(false)} />
+      )}
+
+      {showAddInfo && (
+        <AddInfoSheet tx={tx} onClose={() => setShowAddInfo(false)} onSubmitted={handleEnrichSubmitted} />
       )}
     </>
   );
