@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 data/
+
+# serwist / PWA — generated at build time
+/public/sw.js
+/public/sw.js.map
