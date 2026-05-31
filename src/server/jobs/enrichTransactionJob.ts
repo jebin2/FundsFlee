@@ -52,9 +52,9 @@ export async function prepareReceiptRetry(
     // falls through — existing is included in groupItems and will be soft-deleted below
   }
 
-  await Promise.all(
-    groupItems.map((item) => updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true }))
-  );
+  for (const item of groupItems) {
+    await updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true });
+  }
   const now = new Date().toISOString();
   const txId = crypto.randomUUID();
   await appendTransaction(session.accessToken, session.sheetId, {
