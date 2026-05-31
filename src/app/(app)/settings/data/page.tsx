@@ -12,8 +12,6 @@ export default function DataSettingsPage() {
   const { data: session } = useSession();
   const { transactions } = useTransactions();
   const [exporting, setExporting] = useState(false);
-  const [clearing, setClearing] = useState(false);
-
   async function exportCSV() {
     setExporting(true);
     try {
@@ -40,14 +38,6 @@ export default function DataSettingsPage() {
     } finally {
       setExporting(false);
     }
-  }
-
-  function clearLocalCache() {
-    if (!confirm("Clear local cache? Your data in Google Sheets is unaffected.")) return;
-    setClearing(true);
-    localStorage.removeItem("region");
-    localStorage.removeItem("lifestyle_tags");
-    setTimeout(() => { setClearing(false); router.replace("/"); }, 500);
   }
 
   const items = [
@@ -109,22 +99,6 @@ export default function DataSettingsPage() {
           ))}
         </div>
 
-        <p style={{ fontSize: 12, color: "var(--color-outline)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }} className="px-1">Danger Zone</p>
-        <div className="rounded-3xl overflow-hidden border" style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
-          <button
-            onClick={clearLocalCache}
-            disabled={clearing}
-            className="w-full flex items-center gap-4 px-5 py-4 text-left"
-          >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "var(--color-error-container)" }}>
-              <span className="material-symbols-outlined" style={{ color: "var(--color-error)", fontSize: 20 }}>delete_sweep</span>
-            </div>
-            <div className="flex-1">
-              <p style={{ fontSize: 15, fontWeight: 500, color: "var(--color-error)" }}>Clear local cache</p>
-              <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>Removes saved preferences. Sheet data is safe.</p>
-            </div>
-          </button>
-        </div>
       </div>
     </div>
   );

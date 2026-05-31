@@ -19,6 +19,8 @@ export default function SettingsPage() {
     if (!confirm("Clear all cached files and reload the latest version of the app?")) return;
     setRefreshing(true);
     try {
+      localStorage.removeItem("region");
+      localStorage.removeItem("lifestyle_tags");
       if ("caches" in window) {
         const keys = await caches.keys();
         await Promise.all(keys.map((key) => caches.delete(key)));
