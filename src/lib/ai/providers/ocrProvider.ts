@@ -11,6 +11,7 @@ export async function opencodeImage(
   const blob = new Blob([Buffer.from(imageBase64, "base64")], { type: mimeType });
   const form = new FormData();
   form.append("image", blob, "receipt.jpg");
+  form.append("hide_from_ui", "true");
 
   const uploadRes = await fetch(`${OCR_BASE_URL}/api/tasks/upload`, {
     method: "POST",
