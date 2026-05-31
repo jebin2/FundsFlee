@@ -7,11 +7,13 @@ import { useTransactionsStore } from "@/store/transactionsStore";
 import { getLocalTransactions } from "@/lib/offline";
 import { useEffect, useState } from "react";
 import { AddInfoSheet } from "./AddInfoSheet";
+import { useTransactions } from "@/hooks/useTransactions";
 
 export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: string; source?: string; onClose: () => void }) {
   // Try the already-loaded store first (covers all loaded pages, no network needed)
   const storeTransactions = useTransactionsStore((s) => s.transactions);
   const removeTransaction  = useTransactionsStore((s) => s.removeTransaction);
+  const { refresh } = useTransactions();
 
   const storeItems = useMemo(
     () => storeTransactions
@@ -126,6 +128,7 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
           onSubmitted={() => {
             items.forEach((item) => removeTransaction(item.id));
             onClose();
+            refresh();
           }}
         />
       )}
