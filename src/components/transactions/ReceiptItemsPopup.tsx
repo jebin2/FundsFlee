@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { Transaction } from "@/types";
 import { formatINR } from "@/components/TransactionRow";
 import { useTransactionsStore } from "@/store/transactionsStore";
-import { getLocalTransactions } from "@/lib/offline";
+import { getLocalTransactions, removeLocalTransaction } from "@/lib/offline";
 import { useEffect, useState } from "react";
 import { AddInfoSheet } from "./AddInfoSheet";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -33,6 +33,7 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
     // (e.g., receipt created before the user loaded this session's pages)
     if (storeItems.length > 0) return;
 
+    setLoading(true);
     (async () => {
       try {
         const cached = await getLocalTransactions();
@@ -126,7 +127,10 @@ export function ReceiptItemsPopup({ receiptId, source, onClose }: { receiptId: s
           receiptId={receiptId}
           onClose={() => setShowAddInfo(false)}
           onSubmitted={() => {
-            items.forEach((item) => removeTransaction(item.id));
+            items.forEach((item) => {
+              removeTransaction(item.id);
+              removeLocalTransaction(item.id).catch(() => {});
+            });
             onClose();
             refresh();
           }}

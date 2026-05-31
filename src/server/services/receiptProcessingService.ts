@@ -83,7 +83,7 @@ export async function processReceipt(
     const now = new Date().toISOString();
     const items = parsed.items ?? [];
     // Bank-reported amount is ground truth; OCR may miss items when confidence is low
-    const totalAmount = placeholder.amount || parsed.amount;
+    const totalAmount = placeholder.amount ?? parsed.amount;
 
     log.info("receipt", "AI parsed", { txId, merchant: parsed.merchant, amount: parsed.amount, itemCount: items.length });
 

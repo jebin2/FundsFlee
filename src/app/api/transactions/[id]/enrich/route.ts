@@ -39,7 +39,11 @@ export const POST = withSession<{ id: string }>("POST transaction enrich", async
   // returning so the client's refresh() sees the "processing" state immediately.
   let workTxId = id;
   if (receiptId) {
-    workTxId = await prepareReceiptRetry(session, receiptId, txContext);
+    try {
+      workTxId = await prepareReceiptRetry(session, receiptId, txContext);
+    } catch (err) {
+      return NextResponse.json({ error: "Failed to prepare receipt retry" }, { status: 500 });
+    }
   }
 
   runEnrichTransactionJob(session, {

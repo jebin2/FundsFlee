@@ -35,9 +35,26 @@ export async function prepareReceiptRetry(
   log.info("enrich", "receipt retry — clearing group", { receiptId });
   const all = await getAllTransactions(session.accessToken, session.sheetId);
   const groupItems = all.filter((t) => t.receipt_id === receiptId && !t.deleted);
-  for (const item of groupItems) {
-    await updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true });
+
+  // Idempotency: if a processing placeholder already exists, a concurrent retry is
+  // already in flight — reuse it rather than creating a second orphaned placeholder.
+  // Exception: if the placeholder is older than 15 min it was likely orphaned by a
+  // server crash before the job could start, so fall through and replace it.
+  const STALE_MS = 15 * 60 * 1000;
+  const existing = groupItems.find((t) => t.status === "processing");
+  if (existing) {
+    const ageMs = Date.now() - new Date(existing.created_at).getTime();
+    if (ageMs < STALE_MS) {
+      log.info("enrich", "receipt retry — already processing, reusing placeholder", { txId: existing.id, receiptId });
+      return existing.id;
+    }
+    log.info("enrich", "receipt retry — stale placeholder, replacing", { txId: existing.id, ageMs, receiptId });
+    // falls through — existing is included in groupItems and will be soft-deleted below
   }
+
+  await Promise.all(
+    groupItems.map((item) => updateTransactionField(session.accessToken, session.sheetId, item.id, { deleted: true }))
+  );
   const now = new Date().toISOString();
   const txId = crypto.randomUUID();
   await appendTransaction(session.accessToken, session.sheetId, {
