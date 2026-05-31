@@ -67,10 +67,11 @@ export function AddInfoSheet({ tx, receiptId, onClose, onSubmitted }: AddInfoShe
 
   return (
     <>
-      <div className="fixed inset-0 z-[80]" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
+      <div className="fixed inset-0 z-[80]" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose} onClickCapture={(e) => e.stopPropagation()} />
       <div
         className="fixed inset-x-0 bottom-0 z-[90] flex flex-col rounded-t-3xl overflow-hidden md:left-1/2 md:right-auto md:w-full md:max-w-2xl md:-translate-x-1/2"
         style={{ background: "var(--color-surface)", maxHeight: "85dvh" }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full" style={{ background: "var(--color-outline-variant)" }} />
