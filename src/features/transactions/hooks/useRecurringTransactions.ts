@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { todayISO } from "@/lib/date/iso";
+import { todayISO, toISODate } from "@/lib/date/iso";
 import type { Transaction, RecurrencePeriod } from "@/types";
 
 function nextDueDate(lastDate: string, period: RecurrencePeriod): string {
@@ -12,7 +12,7 @@ function nextDueDate(lastDate: string, period: RecurrencePeriod): string {
     case "monthly": d.setMonth(d.getMonth() + 1); break;
     case "yearly":  d.setFullYear(d.getFullYear() + 1); break;
   }
-  return d.toISOString().split("T")[0];
+  return toISODate(d);
 }
 
 export interface DueRecurring {

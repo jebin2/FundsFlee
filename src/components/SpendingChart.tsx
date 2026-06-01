@@ -8,6 +8,7 @@ import {
 import type { Transaction } from "@/types";
 import { formatINR } from "@/lib/format/currency";
 import type { Period } from "@/lib/date/periods";
+import { toISODate } from "@/lib/date/iso";
 
 interface SpendingChartProps {
   transactions: Transaction[];
@@ -61,7 +62,7 @@ function buildTrendData(transactions: Transaction[], from: string, to: string, p
   const start = new Date(from + "T00:00:00");
   const end = new Date(to + "T00:00:00");
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const key = d.toISOString().split("T")[0];
+    const key = toISODate(d);
     buckets[key] = 0;
   }
   for (const tx of transactions) {
