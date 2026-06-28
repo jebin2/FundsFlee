@@ -51,16 +51,53 @@ if [ ! -x "$PYTHON" ]; then
 fi
 info "Python $("$PYTHON" --version 2>&1 | awk '{print $2}')"
 
-# ── 4. .env.local ─────────────────────────────────────────────────────────────
+# ── 4. Environment validation ─────────────────────────────────────────────────
 step "Environment"
-if [ ! -f "$APP_DIR/.env.local" ]; then
-  error ".env.local not found at $APP_DIR/.env.local"
+ENV_FILE="$APP_DIR/.env.local"
+[ -f "$ENV_FILE" ] || error ".env.local not found at $ENV_FILE\n\n  cp $APP_DIR/.env.local.example $ENV_FILE  &&  nano $ENV_FILE"
+
+# Read KEY from .env.local, then backend/.env (override), trimming quotes.
+# Mirrors app/config.py: env_file=("../.env.local", ".env").
+envget() {
+  local v="" f line
+  for f in "$ENV_FILE" "$BACKEND_DIR/.env"; do
+    [ -f "$f" ] || continue
+    line=$(grep -E "^$1=" "$f" | tail -1 || true)
+    [ -n "$line" ] && v=$(printf '%s' "${line#*=}" | sed -E 's/^["'\'']//; s/["'\'']$//')
+  done
+  printf '%s' "$v"
+}
+
+# Required, honouring the new-name → legacy-name fallbacks the backend accepts.
+BASE_URL_V=$(envget BASE_URL);       [ -z "$BASE_URL_V" ] && BASE_URL_V=$(envget NEXTAUTH_URL)
+SESSION_V=$(envget SESSION_SECRET);  [ -z "$SESSION_V" ]  && SESSION_V=$(envget AUTH_SECRET)
+CID=$(envget GOOGLE_CLIENT_ID)
+CSEC=$(envget GOOGLE_CLIENT_SECRET)
+JWT=$(envget JWT_SECRET)
+
+missing=()
+[ -z "$BASE_URL_V" ] && missing+=("BASE_URL (or NEXTAUTH_URL)")
+[ -z "$CID" ]        && missing+=("GOOGLE_CLIENT_ID")
+[ -z "$CSEC" ]       && missing+=("GOOGLE_CLIENT_SECRET")
+[ -z "$JWT" ]        && missing+=("JWT_SECRET")
+[ -z "$SESSION_V" ]  && missing+=("SESSION_SECRET (or AUTH_SECRET)")
+if [ ${#missing[@]} -gt 0 ]; then
+  error "Missing required keys in .env.local:\n    - $(printf '%s\n    - ' "${missing[@]}" | sed '$s/    - $//')\n  See $APP_DIR/.env.local.example."
 fi
-# The backend reads ../.env.local (BASE_URL falls back to NEXTAUTH_URL).
-AUTH_URL=$(grep -E '^NEXTAUTH_URL=' "$APP_DIR/.env.local" | cut -d= -f2- | tr -d '"' || true)
-[[ "$AUTH_URL" == *"localhost"* ]] && warn "NEXTAUTH_URL is localhost — set it to https://$DOMAIN (used as BASE_URL)."
+
+# Non-fatal sanity checks.
+[[ "$BASE_URL_V" == *localhost* ]] && warn "BASE_URL/NEXTAUTH_URL is localhost — set it to https://$DOMAIN for the live site."
+[[ "$BASE_URL_V" == */ ]]          && warn "BASE_URL/NEXTAUTH_URL has a trailing slash — backend strips it, but Google's redirect URI must match exactly."
+[[ "$JWT" == change-me* || "$JWT" == your-* || "$SESSION_V" == change-me* || "$SESSION_V" == your-* ]] && \
+  warn "JWT_SECRET/SESSION_SECRET still looks like a placeholder — set real random values."
+
+PROV=$(envget AI_PROVIDER); PROV=${PROV:-opencode}
+case "$PROV" in
+  claude) [ -z "$(envget ANTHROPIC_API_KEY)" ] && warn "AI_PROVIDER=claude but ANTHROPIC_API_KEY is unset (chain will fall back)." ;;
+  gemini) [ -z "$(envget GEMINI_API_KEY)" ]    && warn "AI_PROVIDER=gemini but GEMINI_API_KEY is unset (chain will fall back)." ;;
+esac
 # Register https://$DOMAIN/auth/google/callback as an authorized redirect URI in Google Console.
-info ".env.local found"
+info ".env.local validated (provider=$PROV, base_url=$BASE_URL_V)"
 
 # ── 5. Backend dependencies ───────────────────────────────────────────────────
 step "Backend dependencies"
