@@ -39,7 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-data/
+# Anchored to repo root: the old app's data/ only. An unanchored "data/" also
+# matched source dirs like frontend/src/app/(app)/settings/data/ (backend
+# secrets stay covered by backend/.gitignore).
+/data/
 
 # serwist / PWA — generated at build time
 /public/sw.js
