@@ -7,7 +7,7 @@ BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
 PORT="${PORT:-3000}"                 # matches the existing Cloudflare Tunnel route
 DOMAIN="fundsflee.voidall.com"
-PYENV_ENV="${PYENV_ENV:-backend_env}"
+PYENV_ENV="${PYENV_ENV:-FundsFlee_env}"
 PYTHON="$HOME/.pyenv/versions/$PYENV_ENV/bin/python"
 
 # ── Colors ────────────────────────────────────────────────────────────────────

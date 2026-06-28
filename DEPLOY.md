@@ -16,7 +16,8 @@ Tunnel** (`fundsflee.voidall.com → localhost:3000`).
 ## What `deploy.sh` does
 
 1. Ensures Node ≥ 20 (via nvm) and PM2.
-2. Verifies the pyenv env `backend_env` exists, installs `backend/requirements.txt`.
+2. Verifies the pyenv env `FundsFlee_env` exists (override with `PYENV_ENV=…`),
+   installs `backend/requirements.txt`.
 3. Builds the SPA (`frontend/ → dist`), wiring `VITE_VAPID_PUBLIC_KEY` from
    `.env.local`'s `VAPID_PUBLIC_KEY` if present.
 4. (Re)starts the `fundsflee` PM2 process: `uvicorn app.main:app` on `127.0.0.1:3000`.
@@ -27,8 +28,8 @@ Tunnel** (`fundsflee.voidall.com → localhost:3000`).
 
 1. **Python env** (pyenv-virtualenv):
    ```bash
-   pyenv install 3.12.8        # if that version isn't present
-   pyenv virtualenv 3.12.8 backend_env
+   pyenv install 3.10.12       # if that version isn't present
+   pyenv virtualenv 3.10.12 FundsFlee_env   # or any pyenv env; pass PYENV_ENV=… to deploy.sh
    ```
 2. **`.env.local`** (repo root — shared with the old app; the backend reads it):
    - `NEXTAUTH_URL=https://fundsflee.voidall.com`  ← also used as the backend `BASE_URL`
