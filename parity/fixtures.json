@@ -1,0 +1,105 @@
+{
+  "comment": "Shared parity fixtures — consumed by parity/serialization.spec.ts (TS) and backend/scripts/parity_serialization.py (Python). Do not edit one side without re-running both.",
+  "transactions": [
+    {
+      "id": "full-001",
+      "date": "2026-06-01",
+      "time": "14:30",
+      "amount": 450,
+      "original_amount": 5.99,
+      "original_currency": "USD",
+      "merchant": "Café Coffee Day ₹",
+      "category": "Food & Dining",
+      "subcategory": "Cafes",
+      "item_name": "Latte",
+      "payment_method": "UPI",
+      "tags": ["coffee", "work"],
+      "notes": "team, meet — with commas",
+      "source": "receipt",
+      "raw_input": "raw \"quoted\" text\nwith newline",
+      "location": "Bengaluru",
+      "is_duplicate": true,
+      "duplicate_ref": "orig-9",
+      "created_at": "2026-06-01T09:00:00.000Z",
+      "updated_at": "2026-06-01T09:05:00.000Z",
+      "status": "done",
+      "receipt_url": "https://drive.google.com/file/d/x/view",
+      "receipt_id": "rcpt-1",
+      "quantity": "2 pcs",
+      "deleted": false,
+      "recurrence": "monthly",
+      "merge_id": "mg-1"
+    },
+    {
+      "id": "min-002",
+      "date": "2026-06-02",
+      "time": "",
+      "amount": 0,
+      "merchant": "",
+      "category": "Others",
+      "payment_method": "Cash",
+      "source": "manual",
+      "created_at": "2026-06-02T00:00:00.000Z",
+      "updated_at": "2026-06-02T00:00:00.000Z"
+    },
+    {
+      "id": "float-003",
+      "date": "2026-06-03",
+      "time": "08:15",
+      "amount": 99.99,
+      "original_amount": 0,
+      "merchant": "Amazon",
+      "category": "Shopping",
+      "payment_method": "Card",
+      "source": "email",
+      "created_at": "2026-06-03T00:00:00.000Z",
+      "updated_at": "2026-06-03T00:00:00.000Z",
+      "tags": [],
+      "status": "merge_failed"
+    },
+    {
+      "id": "del-004",
+      "date": "2026-06-04",
+      "time": "20:00",
+      "amount": 1234,
+      "merchant": "Zomato",
+      "category": "Food & Dining",
+      "payment_method": "UPI",
+      "source": "shortcut",
+      "created_at": "2026-06-04T00:00:00.000Z",
+      "updated_at": "2026-06-04T00:00:00.000Z",
+      "deleted": true,
+      "is_duplicate": false
+    }
+  ],
+  "raw_rows": [
+    {
+      "name": "full strings row",
+      "row": ["r1", "2026-06-01", "14:30", "450", "5.99", "USD", "Swiggy", "Food & Dining", "Cafes", "Latte", "UPI", "a,b", "note", "sms", "raw", "BLR", "TRUE", "ref1", "2026-06-01T09:00:00.000Z", "2026-06-01T09:05:00.000Z", "processing", "url", "rc1", "500g", "", "weekly", "mg1"]
+    },
+    {
+      "name": "sparse short row",
+      "row": ["r2", "2026-06-02"]
+    },
+    {
+      "name": "legacy __DELETED__ sentinel",
+      "row": ["r3", "2026-06-03", "", "10", "", "", "X", "C", "", "", "", "", "__DELETED__", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    },
+    {
+      "name": "string zero original_amount is truthy",
+      "row": ["r4", "2026-06-04", "", "0", "0", "", "M", "C", "", "", "", "", "", "", "", "", "FALSE", "", "", "", "", "", "", "", "", "", ""]
+    },
+    {
+      "name": "comma amount parses numeric prefix",
+      "row": ["r5", "2026-06-05", "", "1,234", "", "", "M", "C", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    },
+    {
+      "name": "garbage amount falls back to 0",
+      "row": ["r6", "2026-06-06", "", "abc", "", "", "M", "C", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    },
+    {
+      "name": "tags with empty segments",
+      "row": ["r7", "2026-06-07", "", "5", "", "", "M", "C", "", "", "", ",a,,b,", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    }
+  ]
+}

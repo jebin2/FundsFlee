@@ -1,0 +1,59 @@
+"""Placeholder transaction factories — port of src/domain/transactions/factory.ts."""
+import uuid
+
+from app.core.dates import today_iso, now_iso
+from app.domain.transactions.metadata import encode_merge_metadata
+
+
+def _base_placeholder(id: str | None = None) -> dict:
+    now = now_iso()
+    return {
+        "id": id or str(uuid.uuid4()),
+        "date": today_iso(),
+        "time": now.split("T")[1][:5],
+        "amount": 0,
+        "category": "Others",
+        "payment_method": "Other",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def create_queued_text_parse_transaction(text: str) -> dict:
+    return {
+        **_base_placeholder(),
+        "merchant": "Parsing SMS…",
+        "source": "sms",
+        "status": "queued",
+        "raw_input": text[:1000],
+    }
+
+
+def create_queued_receipt_transaction(receipt_url: str, id: str | None = None) -> dict:
+    return {
+        **_base_placeholder(id),
+        "merchant": "Processing…",
+        "source": "receipt",
+        "status": "queued",
+        "receipt_url": receipt_url,
+    }
+
+
+def create_queued_statement_transaction(receipt_url: str) -> dict:
+    return {
+        **_base_placeholder(),
+        "merchant": "Bank Statement",
+        "source": "import",
+        "status": "queued",
+        "receipt_url": receipt_url,
+    }
+
+
+def create_merge_placeholder_transaction(source_ids: list[str]) -> dict:
+    return {
+        **_base_placeholder(),
+        "merchant": "Merging…",
+        "source": "merge",
+        "status": "merging",
+        "notes": encode_merge_metadata(source_ids),
+    }
