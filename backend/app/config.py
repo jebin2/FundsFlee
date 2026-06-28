@@ -1,4 +1,4 @@
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SESSION_SECRET", "AUTH_SECRET"),
     )
     session_cookie: str = "fundsflee_session"
+
+    @field_validator("base_url")
+    @classmethod
+    def _strip_trailing_slash(cls, v: str) -> str:
+        # A trailing slash (e.g. NEXTAUTH_URL=…com/) would build the OAuth
+        # redirect as …com//auth/google/callback → redirect_uri_mismatch.
+        return v.rstrip("/")
 
     # Google OAuth
     google_client_id: str = ""
