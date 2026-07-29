@@ -20,6 +20,7 @@ from app.ai.client import generate_text
 from app.ai.parse_email import validate_transaction
 from app.ai.parse_json import try_parse_ai_json
 from app.core.logger import log
+from app.services.expand_items import item_quantity
 
 # Per-unit budgets. A flat cap would decapitate a statement while leaving a
 # short body untouched; the email cap matches parse_email's existing 4000.
@@ -49,7 +50,8 @@ Field rules:
 - payment_method: UPI | Card | NetBanking | Cash | Other.
 - date: YYYY-MM-DD. The transaction date, not the email received date.
 - time: HH:MM 24h. Use "00:00" if absent.
-- item_name: specific product/service purchased. Examples: "Nandhana Palace Order #8407112492", "Airtel Mobile Recharge", "Electricity Bill May 2026". Omit (null) when nothing specific is identifiable.
+- items: every line item named anywhere in the email or its documents — food dishes, products, services. "1 X High Protein - Supreme Boneless Chicken Biryani" becomes {"name":"High Protein - Supreme Boneless Chicken Biryani","qty":1}. Include price only when that line's own price is stated; never split the total yourself. Return [] when nothing is itemised.
+- item_name: specific product/service purchased. Examples: "Airtel Mobile Recharge", "Electricity Bill May 2026". Leave null when items covers it — items is preferred for itemised orders.
 - notes: transaction/order/reference ID or any other useful detail not captured elsewhere. Omit (null) if nothing useful.
 - confidence: 0–1. Set below 0.65 if amount, merchant, or date is ambiguous.
 - uncertain_fields: array of field names you are unsure about, e.g. ["date", "merchant"].
@@ -67,6 +69,7 @@ Respond with valid JSON only — no markdown fences, no explanation:
       "payment_method": string,
       "date": "YYYY-MM-DD",
       "time": "HH:MM",
+      "items": [{"name": string, "qty": number, "unit": string | null, "price": number | null}],
       "item_name": string | null,
       "notes": string | null,
       "confidence": number,
@@ -74,6 +77,48 @@ Respond with valid JSON only — no markdown fences, no explanation:
     }
   ]
 }"""
+
+
+def _clean_items(raw) -> list[tuple[str, float, str | None]]:
+    out: list[tuple[str, float, str | None]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        qty = it.get("qty")
+        qty = qty if isinstance(qty, (int, float)) and not isinstance(qty, bool) and qty > 0 else 1
+        unit = it.get("unit")
+        out.append((name, qty, unit.strip() if isinstance(unit, str) and unit.strip() else None))
+    return out
+
+
+def apply_items(tx: dict, raw_items) -> None:
+    """Fold a parsed line-item list into the transaction's own fields.
+
+    Deliberately NOT expanded into one row per item the way receipts are
+    (expand_items_to_rows): an email lists dish names but almost never their
+    individual prices, so splitting the total would be invention. The names are
+    the useful part, so they go on the single real transaction.
+    """
+    items = _clean_items(raw_items)
+    if not items:
+        return
+
+    listing = "; ".join(f"{qty:g} × {name}" + (f" ({unit})" if unit else "")
+                        for name, qty, unit in items)
+
+    if len(items) == 1:
+        name, qty, unit = items[0]
+        tx["item_name"] = name
+        if item_quantity(qty, unit):
+            tx["quantity"] = item_quantity(qty, unit)
+    else:
+        tx["item_name"] = f"{items[0][0]} +{len(items) - 1} more"
+
+    existing = (tx.get("notes") or "").strip()
+    tx["notes"] = f"{listing} · {existing}" if existing else listing
 
 
 def build_bundle_prompt(units: list[dict], region: str, today_date: str) -> str:
@@ -165,6 +210,7 @@ async def parse_email_bundle(
     for r in rows:
         tx = validate_transaction(r, today_date) if isinstance(r, dict) else None
         if tx:
+            apply_items(tx, r.get("items"))
             valid.append(tx)
         else:
             dropped.append(f"{(r or {}).get('merchant', '?')}/{(r or {}).get('amount', '?')}"

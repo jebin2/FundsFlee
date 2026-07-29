@@ -82,6 +82,62 @@ class TestMerging:
         assert [t["amount"] for t in out["transactions"]] == [450, 1299, 5000]
 
 
+class TestItems:
+    """Line items from the email body land on the transaction."""
+
+    ORDER = [{"name": "High Protein - Supreme Boneless Chicken Biryani", "qty": 1},
+             {"name": "Andhra Pappula Podi - 200Gms", "qty": 1}]
+
+    def test_item_names_go_into_notes(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(504.47, items=self.ORDER, notes="Order ID: 8121273968")]})
+        tx = _run()["transactions"][0]
+        assert tx["notes"] == (
+            "1 × High Protein - Supreme Boneless Chicken Biryani; "
+            "1 × Andhra Pappula Podi - 200Gms · Order ID: 8121273968")
+
+    def test_multiple_items_summarise_in_item_name(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(504.47, items=self.ORDER)]})
+        tx = _run()["transactions"][0]
+        assert tx["item_name"] == "High Protein - Supreme Boneless Chicken Biryani +1 more"
+
+    def test_single_item_becomes_the_item_name(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(325, items=[{"name": "Chicken Biryani", "qty": 1}])]})
+        tx = _run()["transactions"][0]
+        assert tx["item_name"] == "Chicken Biryani"
+        assert "quantity" not in tx  # qty 1 adds no noise
+
+    def test_quantity_is_recorded_when_more_than_one(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(650, notes=None, items=[{"name": "Chicken Biryani", "qty": 2}])]})
+        tx = _run()["transactions"][0]
+        assert tx["quantity"] == "2"
+        assert tx["notes"] == "2 × Chicken Biryani"
+
+    def test_units_are_kept(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(120, notes=None, items=[{"name": "Milk", "qty": 2, "unit": "L"}])]})
+        assert _run()["transactions"][0]["notes"] == "2 × Milk (L)"
+
+    def test_fractional_quantities_do_not_render_as_floats(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(120, items=[{"name": "Tomatoes", "qty": 1.5, "unit": "kg"}])]})
+        assert "1.5 × Tomatoes" in _run()["transactions"][0]["notes"]
+
+    def test_no_items_leaves_the_transaction_untouched(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(426.11, items=[], notes="Order ID: 1")]})
+        tx = _run()["transactions"][0]
+        assert tx["notes"] == "Order ID: 1"
+
+    def test_malformed_items_are_ignored(self, monkeypatch):
+        _fake_ai(monkeypatch, {"doc_type": "purchase", "transactions": [
+            _row(426.11, items=["just a string", {"qty": 2}, None], notes="keep me")]})
+        assert _run()["transactions"][0]["notes"] == "keep me"
+
+
 class TestValidation:
     def test_rows_failing_the_gauntlet_are_dropped(self, monkeypatch):
         _fake_ai(monkeypatch, {"doc_type": "statement", "transactions": [
