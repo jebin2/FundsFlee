@@ -15,28 +15,45 @@ TextFn = Callable[[str, str, int], Awaitable[str]]
 ImageFn = Callable[[str, str, str, str, int], Awaitable[str]]
 
 
-def text_chain() -> list[TextFn]:
-    all_fns: list[TextFn] = [
-        lambda p, s, t: claude_text(p, s, t),
-        lambda p, s, t: gemini_text(p, s),
-        lambda p, s, t: opencode_text(p, s),
-    ]
+def _order() -> list[str]:
+    """Configured provider first, then the others as fallbacks."""
     if PRIMARY == "gemini":
-        return [all_fns[1], all_fns[0], all_fns[2]]
+        return ["gemini", "claude", "opencode"]
     if PRIMARY == "opencode":
-        return [all_fns[2], all_fns[0], all_fns[1]]
-    return all_fns
+        return ["opencode", "claude", "gemini"]
+    return ["claude", "gemini", "opencode"]
 
 
-def image_chain() -> list[ImageFn]:
-    claude: ImageFn = lambda b, m, t, s, tok: claude_image(b, m, t, s, tok)
-    gemini: ImageFn = lambda b, m, t, s, tok: gemini_image(b, m, t, s)
-    opencode: ImageFn = lambda b, m, t, s, tok: opencode_image(b, m, t, s)
-    if PRIMARY == "gemini":
-        return [gemini, claude, opencode]
-    if PRIMARY == "opencode":
-        return [opencode, claude, gemini]
-    return [claude, gemini, opencode]
+def _configured(name: str) -> bool:
+    """Skip a provider we have no usable credential for.
+
+    Attempting one anyway costs a doomed round-trip per call — roughly half a
+    second each for claude and gemini — and buries the real failure under
+    401s in the log.  opencode authenticates by URL, so it is always eligible.
+    """
+    if name == "claude":
+        return bool(settings.anthropic_api_key)
+    if name == "gemini":
+        return bool(settings.gemini_api_key)
+    return True
+
+
+def text_chain() -> list[tuple[str, TextFn]]:
+    fns: dict[str, TextFn] = {
+        "claude": lambda p, s, t: claude_text(p, s, t),
+        "gemini": lambda p, s, t: gemini_text(p, s),
+        "opencode": lambda p, s, t: opencode_text(p, s),
+    }
+    return [(n, fns[n]) for n in _order() if _configured(n)]
+
+
+def image_chain() -> list[tuple[str, ImageFn]]:
+    fns: dict[str, ImageFn] = {
+        "claude": lambda b, m, t, s, tok: claude_image(b, m, t, s, tok),
+        "gemini": lambda b, m, t, s, tok: gemini_image(b, m, t, s),
+        "opencode": lambda b, m, t, s, tok: opencode_image(b, m, t, s),
+    }
+    return [(n, fns[n]) for n in _order() if _configured(n)]
 
 
 async def run_chain(
