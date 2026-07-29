@@ -76,7 +76,10 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
 
         receipt_id = request.get("receiptGroupId") or tx_id
         now = now_iso()
-        items = parsed.get("items") or []
+        # Only priced lines can become rows — expand_items_to_rows splits the
+        # bill by item price, and the parser leaves price null when the
+        # document never stated one.
+        items = [i for i in (parsed.get("items") or []) if i.get("price") is not None]
         # Bank-reported amount is ground truth; OCR may miss items when confidence is low
         total_amount = placeholder["amount"] if placeholder.get("amount") is not None else parsed.get("amount")
 

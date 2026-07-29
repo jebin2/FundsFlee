@@ -21,7 +21,7 @@ names or addresses — so pm2 logs stay shareable.
 import base64
 import time
 
-from app.ai.parse_email import extract_email_text
+from app.extract.html_text import extract_email_text
 from app.core.logger import log
 from app.extract.eml import parse_eml
 from app.extract.pdf import PAGE_IMAGE_MIME, PdfError, extract_pdf

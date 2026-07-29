@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.ai.parse_bundle import parse_email_bundle  # noqa: E402
+from app.ai.parser import fold_items, parse_units  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.core.dates import today_iso  # noqa: E402
 from app.extract.pipeline import collect_units, group_units  # noqa: E402
@@ -83,7 +83,9 @@ async def main() -> int:
 
     rows = []
     for i, group in enumerate(groups, 1):
-        result = await parse_email_bundle(group, args.region, today_iso())
+        result = await parse_units(group, args.region, today_iso())
+        for tx in result["transactions"]:
+            fold_items(tx)  # mirrors the email import path
         print(f"[group {i}/{len(groups)}] docType={result['docType']} "
               f"skipReason={result['skipReason']} rows={len(result['transactions'])}")
         rows.extend(result["transactions"])

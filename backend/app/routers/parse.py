@@ -1,19 +1,15 @@
-"""Parsing endpoints — port of src/app/api/parse/*.
-
-Includes the synchronous text/image/statement parsers and the async job +
-manual-retry variants. The statement parser here has its OWN verbatim system
-prompt (more detailed than the background job's).
-"""
+"""Parsing endpoints — synchronous text/image/statement parsers plus the async
+job and manual-retry variants. All of them go through app.ai.parser."""
 import asyncio
 import base64
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.ai.parse_image import parse_receipt_image
-from app.ai.parse_statement import StatementParseError, parse_statement_pdf
+from app.ai.parser import NO_FLOOR, parse_units
 from app.ai.parse_text import parse_transaction_text
 from app.core.dates import today_iso
-from app.extract.pdf import PdfError
+from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession, require_session
 from app.jobs.statement_parse_job import run_statement_parse_job
 from app.jobs.text_parse_job import run_text_parse_job
@@ -23,30 +19,6 @@ from app.use_cases.create_text_parse_request import create_text_parse_request
 router = APIRouter()
 
 VALID_TYPES = ("image/jpeg", "image/png", "image/webp")
-
-SYSTEM_PROMPT = """You are a bank statement parser for an Indian spending tracker.
-Extract all debit transactions from the provided bank statement PDF.
-
-Respond with valid JSON only:
-{
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "amount": number (INR, positive for debits),
-      "merchant": string (payee/description, cleaned up),
-      "category": string (one of: Food & Dining, Transport, Shopping, Entertainment, Health, Bills & Utilities, Education, Personal Care, Gifts & Donations, Others),
-      "payment_method": "UPI" | "Card" | "NetBanking" | "Cash" | "Other",
-      "notes": string or null (reference number or original description)
-    }
-  ]
-}
-
-Rules:
-- Only include debits (money going out), not credits (incoming money)
-- Clean up merchant names (e.g. "UPI/918888/SWIGGY" → "Swiggy")
-- If a transaction description is unclear, put it in notes and set merchant to the raw description
-- Infer category from merchant name when possible"""
-
 
 # ── Synchronous parsers ──────────────────────────────────────────────────────
 @router.post("/api/parse/text")
@@ -86,15 +58,18 @@ async def parse_statement(request: Request, _session: SheetSession = Depends(req
     if len(data) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 20MB)")
 
-    try:
-        rows = await parse_statement_pdf(data, SYSTEM_PROMPT, today_iso())
-    except PdfError as err:
-        # Encrypted or unreadable — the message is written for the user.
-        raise HTTPException(status_code=400, detail=str(err))
-    except StatementParseError:
+    units = await collect_units(data, "application/pdf", file.filename or "statement.pdf")
+    broken = next((u for u in units if u["kind"] == "error"), None)
+    if broken:
+        # Encrypted or unreadable — the reason is written for the user.
+        raise HTTPException(status_code=400, detail=broken["reason"])
+
+    parsed = await parse_units(units, "", today_iso(),
+                               min_confidence=NO_FLOOR, apply_cheap_guards=False)
+    if parsed["skipReason"] == "parse_error":
         raise HTTPException(status_code=500, detail="Could not parse AI response")
 
-    return {"transactions": rows}
+    return {"transactions": parsed["transactions"]}
 
 
 # ── Async job + manual retry ─────────────────────────────────────────────────

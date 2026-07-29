@@ -1,14 +1,15 @@
-"""Bank statement parse job — port of src/server/jobs/statementParseJob.ts.
+"""Bank statement parse job.
 
-The PDF is extracted first (text layer, or rasterised pages when scanned) and
-parsed through the provider chain, so this no longer depends on Anthropic alone.
-The SYSTEM_PROMPT below stays local to this job — the route's is different.
+The PDF becomes units (text layer, or rasterised pages when scanned) and goes
+through the single parser, so statement rows now pass the same validation as
+every other row.
 """
 import re
 import uuid
 
-from app.ai.parse_statement import parse_statement_pdf
+from app.ai.parser import NO_FLOOR, parse_units
 from app.core.dates import today_iso, now_iso
+from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession
 from app.core.logger import log
 from app.sheets import (
@@ -17,28 +18,6 @@ from app.sheets import (
     get_transaction_by_id,
     update_transaction_field,
 )
-
-SYSTEM_PROMPT = """You are a bank statement parser for an Indian spending tracker.
-Extract all debit transactions from the provided bank statement PDF.
-
-Respond with valid JSON only:
-{
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "amount": number,
-      "merchant": string,
-      "category": string (Food & Dining|Transport|Shopping|Entertainment|Health|Bills & Utilities|Education|Personal Care|Gifts & Donations|Others),
-      "payment_method": "UPI"|"Card"|"NetBanking"|"Cash"|"Other",
-      "notes": string or null
-    }
-  ]
-}
-
-Rules:
-- Only include debits (money out), not credits
-- Clean merchant names (e.g. "UPI/SWIGGY" → "Swiggy")
-- Infer category from merchant when possible"""
 
 _DRIVE_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]+)")
 
@@ -65,7 +44,10 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
             return
 
         downloaded = await download_receipt_from_drive(session.access_token, file_id)
-        rows = await parse_statement_pdf(downloaded["buffer"], SYSTEM_PROMPT, today_iso())
+        units = await collect_units(downloaded["buffer"], "application/pdf", "statement.pdf")
+        parsed = await parse_units(units, "", today_iso(),
+                                   min_confidence=NO_FLOOR, apply_cheap_guards=False)
+        rows = parsed["transactions"]
 
         log.info("statement-parse", f"extracted {len(rows)} transactions", {"placeholderId": placeholder_id})
 

@@ -1,7 +1,9 @@
-"""Receipt image parser — port of src/lib/ai/parse-image.ts."""
-from app.ai.client import generate_with_image
-from app.ai.parse_json import parse_ai_json
-from app.ai.parse_text import SYSTEM_PROMPT
+"""Image entry point — receipt photos and scans.
+
+Builds an image unit and hands it to the single parser. The returned items keep
+their prices so receipt_processing_service can expand them into a row each.
+"""
+from app.ai.parser import NO_FLOOR, image_unit, parse_units
 from app.core.dates import today_iso
 
 
@@ -11,19 +13,13 @@ async def parse_receipt_image(
     user_region: str | None = None,
     today_date: str | None = None,
 ) -> dict:
-    user_context = " ".join(
-        p for p in [
-            f"User is in {user_region}." if user_region else "",
-            f"Today's date is {today_date}." if today_date else f"Today's date is {today_iso()}.",
-        ] if p
+    result = await parse_units(
+        [image_unit(image_base64, media_type)],
+        user_region or "",
+        today_date or today_iso(),
+        # Interactive: hand back what was found and let the user correct it.
+        min_confidence=NO_FLOOR,
+        apply_cheap_guards=False,
     )
-
-    raw = await generate_with_image(
-        image_base64,
-        media_type,
-        f"{user_context}\n\nParse this receipt and extract every line item.",
-        SYSTEM_PROMPT,
-        2048,
-    )
-
-    return parse_ai_json(raw)
+    rows = result["transactions"]
+    return rows[0] if rows else {}
