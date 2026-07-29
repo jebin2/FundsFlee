@@ -140,7 +140,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
           </div>
           {!isInFlight && (
             <p style={{ fontSize: 36, fontWeight: 700, color: isFailed ? "rgba(255,255,255,0.4)" : "#fff", letterSpacing: "-0.02em" }} className="mt-3">
-              {isFailed ? "₹—" : formatINR(tx.amount)}
+              {isFailed ? "₹—" : tx.amount < 0 ? `−${formatINR(Math.abs(tx.amount))}` : formatINR(tx.amount)}
             </p>
           )}
         </div>

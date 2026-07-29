@@ -115,8 +115,16 @@ export function TransactionRow({ tx, hasSuggestions, onSuggestionsClick, onClick
       {/* Amount + suggestion indicator */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <div className="text-right">
-          {!isInFlight && tx.amount > 0 && (
-            <p style={{ fontWeight: 600, color: "var(--color-on-surface)" }}>{formatINR(tx.amount)}</p>
+          {/* A negative amount is money back — an order discount or a refund.
+              It has to read as an adjustment, not a purchase, and it used to
+              render as a blank because the guard was `> 0`. */}
+          {!isInFlight && tx.amount !== 0 && (
+            <p style={{
+              fontWeight: 600,
+              color: tx.amount < 0 ? "var(--color-primary)" : "var(--color-on-surface)",
+            }}>
+              {tx.amount < 0 ? `−${formatINR(Math.abs(tx.amount))}` : formatINR(tx.amount)}
+            </p>
           )}
           {tx.is_duplicate && (
             <span style={{ fontSize: 10, color: "#e65100", fontWeight: 600, background: "#fff3e0", padding: "2px 6px", borderRadius: 4 }}>DUP</span>

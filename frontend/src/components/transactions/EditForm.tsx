@@ -21,7 +21,8 @@ export const EditForm = forwardRef<EditFormHandle, {
   const [itemName, setItemName] = useState(tx.item_name || "");
   const [quantity, setQuantity] = useState(tx.quantity || "");
   const [merchant, setMerchant] = useState(tx.merchant === "Processing…" ? "" : tx.merchant);
-  const [amount, setAmount] = useState(tx.amount > 0 ? String(tx.amount) : "");
+  // `> 0` blanked the field on a negative row (a discount), so saving wiped it.
+  const [amount, setAmount] = useState(tx.amount !== 0 ? String(tx.amount) : "");
   const [date, setDate] = useState(tx.date);
   const [category, setCategory] = useState(tx.category || "Others");
   const [paymentMethod, setPaymentMethod] = useState<import("@/types").PaymentMethod>(tx.payment_method || "Other");
