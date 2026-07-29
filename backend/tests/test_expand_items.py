@@ -91,11 +91,13 @@ class TestEveryWriterSharesTheRule:
         "app/routers/shortcut.py",
     ]
 
-    def test_all_of_them_filter_to_priced_items(self):
+    def test_all_of_them_go_through_the_shared_builder(self):
+        # Stronger than checking each one filters correctly: if they all call
+        # rows_from_parsed, the rule cannot diverge between them at all.
         import pathlib as _p
         root = _p.Path(__file__).resolve().parents[1]
-        missing = [w for w in self.WRITERS if "priced_items" not in (root / w).read_text()]
-        assert missing == [], f"writers not applying the rule: {missing}"
+        missing = [w for w in self.WRITERS if "rows_from_parsed" not in (root / w).read_text()]
+        assert missing == [], f"writers not using the shared builder: {missing}"
 
     def test_none_of_them_expand_unfiltered(self):
         import pathlib as _p

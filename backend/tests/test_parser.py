@@ -8,12 +8,12 @@ import app.ai.parser as mod
 from app.ai.parser import (
     CONFIDENCE_FLOOR,
     NO_FLOOR,
-    fold_items,
     image_unit,
     parse_units,
     text_unit,
     validate_transaction,
 )
+from app.services.expand_items import fold_items
 
 TODAY = "2026-07-29"
 

@@ -4,7 +4,6 @@ from app.ai.client import generate_text, generate_with_image, active_provider
 from app.ai.parse_json import try_parse_ai_json, parse_ai_json
 from app.ai.parser import (
     SYSTEM_PROMPT,
-    fold_items,
     image_unit,
     parse_units,
     text_unit,
@@ -28,7 +27,6 @@ __all__ = [
     "SYSTEM_PROMPT",
     "parse_units",
     "validate_transaction",
-    "fold_items",
     "text_unit",
     "image_unit",
     "parse_transaction_text",

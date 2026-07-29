@@ -1,9 +1,8 @@
 """Email import job — port of src/server/jobs/emailImportJob.ts."""
 import asyncio
-import uuid
 from datetime import datetime, timezone
 
-from app.ai.parser import fold_items, parse_units
+from app.ai.parser import parse_units
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
@@ -13,7 +12,7 @@ from app.email_import.gmail_query import build_gmail_query
 from app.email_import.mime_text_extractor import extract_payload_text
 from app.extract.html_text import extract_email_text
 from app.extract.pipeline import collect_message_units, group_units
-from app.services.expand_items import build_item_rows, priced_items
+from app.services.expand_items import rows_from_parsed
 from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
 from app.sheets import (
     append_transactions,
@@ -201,26 +200,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     "raw_input": f"{origin_subject} | {origin_from}"[:500],
                 }
 
-                # Same rule as an uploaded PDF and a photographed receipt: a
-                # priced, itemised bill becomes a row each. An order email that
-                # prices its lines should not land differently just because it
-                # arrived by mail instead of as an attachment.
-                items = priced_items(transaction.get("items"))
-                if len(items) > 1:
-                    built = build_item_rows(base, items, now, transaction["amount"])
-                else:
-                    fold_items(transaction)
-                    built = [{
-                        **base,
-                        "id": str(uuid.uuid4()),
-                        "amount": transaction["amount"],
-                        "item_name": transaction.get("item_name"),
-                        "quantity": transaction.get("quantity"),
-                        "notes": transaction.get("notes"),
-                        "status": "done",
-                        "created_at": now,
-                        "updated_at": now,
-                    }]
+                built = rows_from_parsed(base, transaction, now, transaction["amount"])
 
                 for tx in built:
                     rows_to_write.append(tx)

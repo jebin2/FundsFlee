@@ -21,7 +21,6 @@ from datetime import date, timedelta
 from app.ai.client import generate_text, generate_with_image
 from app.ai.parse_json import try_parse_ai_json
 from app.core.logger import log
-from app.services.expand_items import item_quantity
 
 MAX_EMAIL_CHARS = 4_000
 MAX_DOC_CHARS = 20_000
@@ -215,27 +214,6 @@ def validate_transaction(raw: dict, today_date: str, min_confidence: float = CON
         # which name dishes but rarely price them).
         tx["items"] = items
     return tx
-
-
-def fold_items(tx: dict) -> None:
-    """Put line items on the transaction itself, for flows that keep one row."""
-    items = tx.get("items") or []
-    if not items:
-        return
-    listing = "; ".join(
-        f"{i['qty']:g} × {i['name']}" + (f" ({i['unit']})" if i.get("unit") else "")
-        for i in items
-    )
-    if len(items) == 1:
-        tx["item_name"] = items[0]["name"]
-        qty_label = item_quantity(items[0]["qty"], items[0].get("unit"))
-        if qty_label:
-            tx["quantity"] = qty_label
-    else:
-        tx["item_name"] = f"{items[0]['name']} +{len(items) - 1} more"
-
-    existing = (tx.get("notes") or "").strip()
-    tx["notes"] = f"{listing} · {existing}" if existing else listing
 
 
 # ── Prompt assembly ──────────────────────────────────────────────────────────

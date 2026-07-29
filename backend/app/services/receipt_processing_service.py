@@ -16,12 +16,7 @@ from app.sheets import (
     get_meta_values,
     update_transaction_field,
 )
-from app.services.expand_items import (
-    expand_items_to_rows,
-    item_quantity,
-    priced_items,
-    unit_price_note,
-)
+from app.services.expand_items import finish_placeholder, priced_items, rows_from_parsed
 
 VALID_RECEIPT_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 
@@ -89,37 +84,20 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
                  {"txId": tx_id, "merchant": parsed.get("merchant"), "amount": parsed.get("amount"),
                   "itemCount": len(items)})
 
-        if len(items) > 1:
-            log.info("receipt", "expanding to multiple rows", {"txId": tx_id, "itemCount": len(items)})
-            await expand_items_to_rows(session, tx_id, {
-                "date": parsed.get("date"),
-                "time": parsed.get("time"),
-                "merchant": parsed.get("merchant"),
-                "category": parsed.get("category"),
-                "subcategory": parsed.get("subcategory"),
-                "payment_method": parsed.get("payment_method"),
-                "notes": parsed.get("notes"),
-                "source": "receipt",
-                "receipt_url": placeholder["receipt_url"],
-                "receipt_id": receipt_id,
-            }, items, now, total_amount)
-        else:
-            single_item = items[0] if items else None
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {
-                "date": parsed.get("date"),
-                "time": parsed.get("time"),
-                "amount": total_amount,
-                "merchant": parsed.get("merchant"),
-                "category": parsed.get("category"),
-                "subcategory": parsed.get("subcategory"),
-                "item_name": single_item.get("name") if single_item and single_item.get("name") is not None else parsed.get("item_name"),
-                "quantity": item_quantity(single_item.get("qty"), single_item.get("unit")) if single_item else None,
-                "payment_method": parsed.get("payment_method"),
-                "notes": (unit_price_note(single_item.get("qty"), single_item.get("unit_price")) if single_item else None) or parsed.get("notes"),
-                "receipt_id": receipt_id,
-                "status": "done",
-                "updated_at": now,
-            })
+        rows = rows_from_parsed({
+            "date": parsed.get("date"),
+            "time": parsed.get("time"),
+            "merchant": parsed.get("merchant"),
+            "category": parsed.get("category"),
+            "subcategory": parsed.get("subcategory"),
+            "payment_method": parsed.get("payment_method"),
+            "notes": parsed.get("notes"),
+            "tags": parsed.get("tags"),
+            "source": "receipt",
+            "receipt_url": placeholder["receipt_url"],
+            "receipt_id": receipt_id,
+        }, parsed, now, total_amount)
+        written = await finish_placeholder(session, tx_id, rows, now)
 
         try:
             meta = await get_meta_values(session.access_token, session.sheet_id)
@@ -127,7 +105,7 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
             meta = {}
         if meta.get("push_subscription"):
             total = total_amount
-            item_n = len(items) or 1
+            item_n = written
             payload = {
                 "title": f"{parsed.get('merchant') or 'Receipt'} processed",
                 "body": f"{item_n} item{'s' if item_n != 1 else ''} · ₹{to_locale_inr(_round(total))}",
@@ -145,8 +123,8 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
 
         log.info("receipt", "done",
                  {"txId": tx_id, "merchant": parsed.get("merchant"), "amount": parsed.get("amount"),
-                  "itemCount": len(items) or 1})
-        return {"ok": True, "txId": receipt_id, "itemCount": len(items) or 1}
+                  "rows": written})
+        return {"ok": True, "txId": receipt_id, "itemCount": written}
     except Exception as err:
         log.error("receipt", "failed", err, {"txId": tx_id})
         try:

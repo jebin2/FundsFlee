@@ -23,10 +23,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.ai.parser import fold_items, parse_units  # noqa: E402
+from app.ai.parser import parse_units  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.core.dates import today_iso  # noqa: E402
 from app.extract.pipeline import collect_units, group_units  # noqa: E402
+from app.services.expand_items import fold_items  # noqa: E402
 
 MIME_BY_SUFFIX = {".eml": "message/rfc822", ".pdf": "application/pdf"}
 

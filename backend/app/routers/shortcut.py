@@ -4,15 +4,13 @@ POST /api/shortcut uses the shortcut-JWT (NOT the session cookie); the file/
 install routes use the in-memory prepare-ID. Paths must not change — installed
 shortcuts hardcode them.
 """
-import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from app.ai.parse_text import parse_transaction_text
-from app.ai.parser import fold_items
-from app.services.expand_items import build_item_rows, priced_items
+from app.services.expand_items import rows_from_parsed
 from app.config import settings
 from app.core.dates import now_iso, today_iso
 from app.core.deps import SheetSession, require_session
@@ -68,22 +66,7 @@ async def shortcut(request: Request) -> dict:
         "raw_input": text,
     }
 
-    # Same rule as every other entry point.
-    items = priced_items(parsed.get("items"))
-    if len(items) > 1:
-        rows = build_item_rows(base, items, now, parsed.get("amount"))
-    else:
-        fold_items(parsed)
-        rows = [{
-            **base,
-            "id": str(uuid.uuid4()),
-            "amount": parsed.get("amount"),
-            "item_name": parsed.get("item_name"),
-            "quantity": parsed.get("quantity"),
-            "notes": parsed.get("notes"),
-            "created_at": now,
-            "updated_at": now,
-        }]
+    rows = rows_from_parsed(base, parsed, now, parsed.get("amount"))
 
     await append_transactions(access_token, payload["sheetId"], rows)
     # Installed shortcuts read a single object here, so an itemised bill
