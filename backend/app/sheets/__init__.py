@@ -30,6 +30,7 @@ from app.sheets.suggestions import (
 from app.sheets.transactions import (
     PAGE_SIZE,
     append_transaction,
+    append_transactions,
     get_all_transactions,
     get_transaction_by_id,
     get_transactions,
@@ -41,6 +42,7 @@ __all__ = [
     "append_category",
     "append_item_suggestions",
     "append_transaction",
+    "append_transactions",
     "check_email_parsed",
     "delete_category_by_id",
     "download_receipt_from_drive",

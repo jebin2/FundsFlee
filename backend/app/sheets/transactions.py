@@ -68,21 +68,33 @@ def _get_row_counts(sheets, sheet_id: str) -> tuple[int, int]:
     return physical, visible
 
 
-def _append_transaction_sync(access_token: str, sheet_id: str, tx: dict) -> None:
+def _append_transactions_sync(access_token: str, sheet_id: str, txs: list[dict]) -> None:
+    if not txs:
+        return
     sheets = get_sheets_client(access_token)
     ensure_transaction_schema_sync(sheets, sheet_id)
     with_sheets_retry(lambda: sheets.spreadsheets().values().append(
         spreadsheetId=sheet_id,
         range="transactions!A2",
         valueInputOption="RAW",
-        body={"values": [transaction_to_row(tx)]},
+        body={"values": [transaction_to_row(tx) for tx in txs]},
     ).execute())
-    # New row is not in the cache — force rebuild on next update call.
+    # New rows are not in the cache — force rebuild on next update call.
     invalidate_row_index(sheet_id)
 
 
+async def append_transactions(access_token: str, sheet_id: str, txs: list[dict]) -> None:
+    """Write many rows in ONE request.
+
+    Sheets bills per request, not per row, against a per-minute write quota —
+    appending a fifty-order import row by row burned fifty of them and risked a
+    65-second backoff mid-run.
+    """
+    await asyncio.to_thread(_append_transactions_sync, access_token, sheet_id, txs)
+
+
 async def append_transaction(access_token: str, sheet_id: str, tx: dict) -> None:
-    await asyncio.to_thread(_append_transaction_sync, access_token, sheet_id, tx)
+    await asyncio.to_thread(_append_transactions_sync, access_token, sheet_id, [tx])
 
 
 # Fetch one page of transactions, working backwards from the end of the sheet.

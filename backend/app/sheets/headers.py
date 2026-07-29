@@ -1,5 +1,7 @@
-"""Sheet tab headers — port of src/lib/sheets/schema/headers.ts.
-Header names and order are LOAD-BEARING: existing user sheets depend on them."""
+"""Sheet tab headers.
+
+Header names and order are LOAD-BEARING — they must stay in step with
+transaction_schema.COLS, and the write range must cover all of them."""
 
 EXPECTED_HEADERS = (
     "id", "date", "time", "amount", "original_amount", "original_currency",
@@ -7,6 +9,7 @@ EXPECTED_HEADERS = (
     "tags", "notes", "source", "raw_input", "location",
     "is_duplicate", "duplicate_ref", "created_at", "updated_at",
     "status", "receipt_url", "receipt_id", "quantity", "deleted", "recurrence",
+    "merge_id",
 )
 
 CATEGORIES_HEADERS       = ("id", "name", "parent_id", "color", "icon", "is_default", "created_at")

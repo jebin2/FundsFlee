@@ -48,7 +48,7 @@ def ensure_transaction_schema_sync(sheets, sheet_id: str) -> None:
         return
 
     res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="transactions!A1:Z1"
+        spreadsheetId=sheet_id, range="transactions!A1:AA1"
     ).execute()
     current = (res.get("values") or [[]])[0]
     if len(current) >= len(EXPECTED_HEADERS):
@@ -56,7 +56,7 @@ def ensure_transaction_schema_sync(sheets, sheet_id: str) -> None:
         return
     sheets.spreadsheets().values().update(
         spreadsheetId=sheet_id,
-        range="transactions!A1:Z1",
+        range="transactions!A1:AA1",
         valueInputOption="RAW",
         body={"values": [list(EXPECTED_HEADERS)]},
     ).execute()

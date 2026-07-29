@@ -172,7 +172,8 @@ class TestTransactionUpdateToCells:
 class TestHeadersIntegrity:
     def test_cols_match_expected_headers_order(self):
         from app.sheets.headers import EXPECTED_HEADERS
-        # EXPECTED_HEADERS covers A..Z (26); COLS adds merge_id (AA)
+        # Every column must have a header, in the same order — merge_id at AA
+        # used to fall past the header row and be written under a blank one.
+        assert tuple(COLS) == EXPECTED_HEADERS
         for i, name in enumerate(EXPECTED_HEADERS):
             assert COLS[name][0] == i
-        assert COLS["merge_id"][0] == len(EXPECTED_HEADERS)

@@ -15,7 +15,7 @@ from app.extract.html_text import extract_email_text
 from app.extract.pipeline import collect_message_units, group_units
 from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
 from app.sheets import (
-    append_transaction,
+    append_transactions,
     get_processed_email_ids,
     record_parsed_email,
     set_meta_value,
@@ -174,6 +174,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             # A statement bundle yields many rows; a purchase yields exactly one.
             now = now_iso()
             msg_tx_ids: list[str] = []
+            rows_to_write: list[dict] = []
             for transaction in transactions:
                 tx = {
                     "id": str(uuid.uuid4()),
@@ -192,12 +193,14 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     "status": "done",
                 }
 
-                await append_transaction(session.access_token, session.sheet_id, tx)
+                rows_to_write.append(tx)
                 msg_tx_ids.append(tx["id"])
 
                 log.info("email", f"imported ₹{tx['amount']} @ {tx['merchant']}",
                          {"category": tx["category"], "subject": subject})
 
+            # One request for the whole message, however many rows it produced.
+            await append_transactions(session.access_token, session.sheet_id, rows_to_write)
             new_tx_ids.extend(msg_tx_ids)
 
             try:

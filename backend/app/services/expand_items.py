@@ -1,7 +1,7 @@
 """Receipt item expansion — port of src/server/services/expandItems.ts."""
 import uuid
 
-from app.sheets import append_transaction, update_transaction_field
+from app.sheets import append_transactions, update_transaction_field
 from app.core.deps import SheetSession
 
 
@@ -24,8 +24,9 @@ async def expand_items_to_rows(
     now: str,
     total_amount: float | None = None,
 ) -> None:
+    rows: list[dict] = []
     for item in items:
-        tx = {
+        rows.append({
             "id": str(uuid.uuid4()),
             **base,
             "amount": item["price"],
@@ -36,14 +37,13 @@ async def expand_items_to_rows(
             "status": "done",
             "created_at": now,
             "updated_at": now,
-        }
-        await append_transaction(session.access_token, session.sheet_id, tx)
+        })
 
     if total_amount is not None:
         items_total = sum(i["price"] for i in items)
         diff = float(f"{total_amount - items_total:.2f}")
         if diff > 0.01:
-            adjust_tx = {
+            rows.append({
                 "id": str(uuid.uuid4()),
                 **base,
                 "amount": diff,
@@ -53,8 +53,10 @@ async def expand_items_to_rows(
                 "status": "done",
                 "created_at": now,
                 "updated_at": now,
-            }
-            await append_transaction(session.access_token, session.sheet_id, adjust_tx)
+            })
+
+    # A receipt with a dozen items is one request, not thirteen.
+    await append_transactions(session.access_token, session.sheet_id, rows)
 
     await update_transaction_field(
         session.access_token, session.sheet_id, placeholder_id,

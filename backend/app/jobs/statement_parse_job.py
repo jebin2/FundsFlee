@@ -13,7 +13,7 @@ from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession
 from app.core.logger import log
 from app.sheets import (
-    append_transaction,
+    append_transactions,
     download_receipt_from_drive,
     get_transaction_by_id,
     update_transaction_field,
@@ -52,6 +52,7 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
         log.info("statement-parse", f"extracted {len(rows)} transactions", {"placeholderId": placeholder_id})
 
         now = now_iso()
+        rows_to_write = []
         for row in rows:
             tx = {
                 "id": str(uuid.uuid4()),
@@ -68,7 +69,9 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
                 "created_at": now,
                 "updated_at": now,
             }
-            await append_transaction(session.access_token, session.sheet_id, tx)
+            rows_to_write.append(tx)
+        # One request for the whole statement, not one per debit line.
+        await append_transactions(session.access_token, session.sheet_id, rows_to_write)
 
         # Mark placeholder done (don't delete — keeps it as an audit entry)
         await update_transaction_field(session.access_token, session.sheet_id, placeholder_id, {

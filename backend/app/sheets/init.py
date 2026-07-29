@@ -25,7 +25,7 @@ SHEET_DISPLAY_NAME = "FundsFlee"
 _TAB_TITLES = ["transactions", "categories", "analysis_cache", "item_suggestions", "meta", "parsed_emails"]
 
 _HEADER_WRITES = [
-    ("transactions!A1:Z1", EXPECTED_HEADERS),
+    ("transactions!A1:AA1", EXPECTED_HEADERS),
     ("categories!A1:G1", CATEGORIES_HEADERS),
     ("analysis_cache!A1:G1", ANALYSIS_CACHE_HEADERS),
     ("item_suggestions!A1:G1", ITEM_SUGGESTIONS_HEADERS),

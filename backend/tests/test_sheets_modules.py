@@ -6,7 +6,7 @@ import pytest
 
 import app.sheets.transactions as transactions_mod
 import app.sheets.meta as meta_mod
-from app.sheets.transaction_schema import LAST_COL, idx, transaction_to_row
+from app.sheets.transaction_schema import ID_RANGE, LAST_COL, idx, transaction_to_row
 from tests.test_transaction_schema import BASE_TX
 
 
@@ -108,7 +108,7 @@ class TestGetTransactions:
 
 class TestUpdateTransactionField:
     def test_writes_batch_update_at_cached_row(self, fake):
-        fake.get_responses["transactions!A2:A5000"] = [["t1"], ["t2"], ["t3"]]
+        fake.get_responses[ID_RANGE] = [["t1"], ["t2"], ["t3"]]
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "t2", {"merchant": "Zomato"}))
 
         batch = next(c for c in fake.calls if c[0] == "batchUpdate")
@@ -117,12 +117,12 @@ class TestUpdateTransactionField:
         assert any(r.startswith("transactions!T") for r in ranges)  # updated_at
 
     def test_unknown_id_is_noop(self, fake):
-        fake.get_responses["transactions!A2:A5000"] = [["t1"]]
+        fake.get_responses[ID_RANGE] = [["t1"]]
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "missing", {"merchant": "X"}))
         assert not any(c[0] == "batchUpdate" for c in fake.calls)
 
     def test_soft_delete_invalidates_row_cache(self, fake):
-        fake.get_responses["transactions!A2:A5000"] = [["t1"]]
+        fake.get_responses[ID_RANGE] = [["t1"]]
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "t1", {"deleted": True}))
         assert "sheet" not in transactions_mod._row_index_cache
 
@@ -133,6 +133,22 @@ class TestUpdateTransactionField:
         append = next(c for c in fake.calls if c[0] == "append")
         assert append[1] == "transactions!A2"
         assert append[2]["values"][0][idx("id")] == "tx-001"
+
+    def test_many_rows_go_in_one_request(self, fake):
+        # Sheets bills per request against a per-minute write quota, so a
+        # fifty-order import must not become fifty appends.
+        txs = [dict(BASE_TX, id=f"tx-{i:03d}") for i in range(50)]
+        asyncio.run(transactions_mod.append_transactions("tok", "sheet", txs))
+
+        appends = [c for c in fake.calls if c[0] == "append"]
+        assert len(appends) == 1
+        rows = appends[0][2]["values"]
+        assert len(rows) == 50
+        assert [r[idx("id")] for r in rows[:3]] == ["tx-000", "tx-001", "tx-002"]
+
+    def test_appending_nothing_makes_no_request(self, fake):
+        asyncio.run(transactions_mod.append_transactions("tok", "sheet", []))
+        assert [c for c in fake.calls if c[0] == "append"] == []
 
 
 class TestMeta:
