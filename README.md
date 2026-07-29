@@ -28,3 +28,6 @@ A personal AI spending tracker that logs transactions automatically from receipt
 ## Feature docs
 
 Plain-language descriptions of every feature are in [`/functionality`](./functionality/).
+
+How a photo, PDF, email or SMS becomes transaction rows:
+[`PARSING_FLOW.md`](./PARSING_FLOW.md).
