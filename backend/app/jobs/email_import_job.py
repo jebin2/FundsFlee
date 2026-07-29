@@ -86,6 +86,11 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 result["skipped"] += 1
                 continue
 
+            # Refresh the lock per message. One forwarded batch can take several
+            # minutes (an AI call per order), and a stale-looking lock would let
+            # the daily cron start alongside this run and import everything twice.
+            await _set_meta_safe(session, "email_import_running_at", now_iso())
+
             from_ = ""
             subject = ""
             body_text = ""
@@ -140,12 +145,29 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 transactions = []
                 skip_reasons = []
                 for i, group in enumerate(groups, 1):
-                    log.info("email", f"parsing group {i}/{len(groups)}",
-                             {"messageId": msg_id, "units": len(group)})
-                    bundle = await parse_email_bundle(group, config["region"], today)
-                    transactions.extend(bundle["transactions"])
-                    if bundle["skipReason"]:
-                        skip_reasons.append(bundle["skipReason"])
+                    has_docs = any(u["kind"] in ("document", "images") for u in group)
+                    email_unit = next((u for u in group if u["kind"] == "email"), None)
+
+                    # A group with no documents is an ordinary single email, so
+                    # use the cheap path: its length and money-word guards reject
+                    # a covering note ("see attached") with no AI call at all.
+                    if not has_docs and email_unit is not None:
+                        parsed = await parse_email_transaction(
+                            email_unit["text"], email_unit.get("from", from_),
+                            email_unit.get("subject", subject), config["region"], today)
+                        rows = [parsed["transaction"]] if parsed["transaction"] else []
+                        reason = parsed.get("skipReason")
+                        log.info("email", f"group {i}/{len(groups)} (body only)",
+                                 {"messageId": msg_id, "rows": len(rows), "reason": reason})
+                    else:
+                        log.info("email", f"parsing group {i}/{len(groups)}",
+                                 {"messageId": msg_id, "units": len(group)})
+                        bundle = await parse_email_bundle(group, config["region"], today)
+                        rows, reason = bundle["transactions"], bundle["skipReason"]
+
+                    transactions.extend(rows)
+                    if reason:
+                        skip_reasons.append(reason)
                 skip_reason = skip_reasons[0] if skip_reasons and not transactions else None
             else:
                 parsed = await parse_email_transaction(body_text, from_, subject, config["region"], today)

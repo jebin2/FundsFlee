@@ -4,9 +4,9 @@ from email.message import EmailMessage
 
 import pymupdf
 
+from app.extract import pipeline
 from app.extract.pipeline import (
     MAX_DEPTH,
-    MAX_UNITS,
     collect_message_units,
     collect_units,
     group_units,
@@ -100,10 +100,33 @@ class TestCaps:
         units = _run(msg.as_bytes(), "message/rfc822")
         assert any(u["kind"] == "error" and "nested too deeply" in u["reason"] for u in units)
 
-    def test_unit_budget_is_enforced(self):
-        atts = [(_digital_pdf(), "application", "pdf", f"s{i}.pdf") for i in range(MAX_UNITS + 5)]
-        units = _run(_mail(attachments=atts).as_bytes(), "message/rfc822")
-        assert len(units) <= MAX_UNITS
+    def test_group_capacity_is_enforced(self, monkeypatch):
+        monkeypatch.setattr(pipeline, "MAX_GROUPS", 3)
+        atts = [{"data": _mail(f"alert {i}").as_bytes(),
+                 "mime_type": "message/rfc822", "filename": f"a{i}.eml"} for i in range(8)]
+        body = {"kind": "email", "text": "fwd", "from": "me@x.com", "subject": "batch", "date": None}
+        groups = group_units(asyncio.run(collect_message_units(body, atts, "fwd")))
+        assert len(groups) <= 3
+
+    def test_a_group_is_taken_whole_or_not_at_all(self, monkeypatch):
+        # Truncating mid-group would price an order from whichever invoices
+        # happened to fit — a wrong amount, silently. Skipping loses a row,
+        # which the "dropped" warning makes visible.
+        monkeypatch.setattr(pipeline, "MAX_GROUPS", 3)
+        atts = []
+        for i in range(8):
+            m = _mail(f"order {i}")
+            for n in range(3):
+                m.add_attachment(_digital_pdf(), maintype="application", subtype="pdf",
+                                 filename=f"inv{i}_{n}.pdf")
+            atts.append({"data": m.as_bytes(), "mime_type": "message/rfc822",
+                         "filename": f"o{i}.eml"})
+        body = {"kind": "email", "text": "fwd", "from": "me@x.com", "subject": "batch", "date": None}
+        groups = group_units(asyncio.run(collect_message_units(body, atts, "fwd")))
+
+        # Group 0 is the covering note; every order group keeps all 3 invoices.
+        for g in groups[1:]:
+            assert _kinds(g) == ["email", "document", "document", "document"]
 
     def test_oversized_attachment_is_skipped_with_a_reason(self):
         units = _run(b"x" * (21 * 1024 * 1024), "application/pdf", "huge.pdf")

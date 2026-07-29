@@ -29,9 +29,13 @@ from app.extract.pdf import PAGE_IMAGE_MIME, PdfError, extract_pdf
 # Gmail message → forwarded message → that message's attachments. Deeper than
 # this is a mail loop, not a bank alert.
 MAX_DEPTH = 2
-# A forwarding mail can legitimately carry a few dozen alerts; each becomes its
-# own group and therefore its own AI call, so this also bounds cost per message.
-MAX_UNITS = 60
+# Groups are what cost money — one AI call each — so that is the real limit.
+MAX_GROUPS = 50
+# Units are only a runaway guard. It must stay well clear of MAX_GROUPS times a
+# typical group size (a Zomato order is 1 email + 3 invoices), because a group
+# truncated halfway is worse than one skipped: the model would price an order
+# from whichever invoices happened to fit.
+MAX_UNITS = 400
 
 PDF_MIME = "application/pdf"
 EML_MIME = "message/rfc822"
@@ -41,7 +45,7 @@ IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")
 
 
 def _new_budget() -> dict:
-    return {"units": 0, "next_group": 0}
+    return {"units": 0, "next_group": 0, "dropped": 0}
 
 
 def _error(source: str, reason: str, group: int) -> dict:
@@ -67,10 +71,6 @@ async def _walk(data: bytes, mime_type: str, source: str, depth: int,
 
     if not data:
         log.warn("extract", "empty artifact — skipped", {"source": _label(source), "mime": mime})
-        return []
-    if budget["units"] >= MAX_UNITS:
-        log.warn("extract", "unit budget reached — remaining attachments skipped",
-                 {"max": MAX_UNITS, "source": _label(source)})
         return []
     if len(data) > _MAX_BYTES:
         log.warn("extract", "attachment over size cap — skipped",
@@ -131,6 +131,17 @@ async def _pdf_unit(data: bytes, source: str, group: int) -> dict:
 
 
 async def _walk_eml(data: bytes, source: str, depth: int, budget: dict) -> list[dict]:
+    # Capacity is checked here, at the group boundary, so a message is taken
+    # whole or not at all. Dropping one forwarded order loses one transaction;
+    # truncating one silently changes its amount.
+    if budget["next_group"] >= MAX_GROUPS or budget["units"] >= MAX_UNITS:
+        log.warn("extract", "capacity reached — forwarded message skipped entirely", {
+            "source": _label(source), "groups": budget["next_group"],
+            "maxGroups": MAX_GROUPS, "units": budget["units"], "maxUnits": MAX_UNITS,
+        })
+        budget["dropped"] = budget.get("dropped", 0) + 1
+        return []
+
     # A forwarded message is a payment of its own — new group.
     group = budget["next_group"]
     budget["next_group"] += 1
@@ -170,12 +181,9 @@ async def _walk_eml(data: bytes, source: str, depth: int, budget: dict) -> list[
     }], group))
 
     for att in attachments:
-        if budget["units"] >= MAX_UNITS:
-            log.warn("extract", "unit budget reached — remaining attachments skipped",
-                     {"max": MAX_UNITS})
-            break
-        # This message's own documents join ITS group; a nested forward starts
-        # another one (allocated inside the recursive _walk_eml).
+        # No budget check here on purpose: once a group is started it is
+        # completed, so an order is never priced from a partial set of invoices.
+        # Capacity is decided up front, at the group boundary.
         units.extend(await _walk(att["data"], att["mime_type"], att["filename"] or source,
                                  depth + 1, budget, group))
     return units
@@ -189,10 +197,11 @@ def group_units(units: list[dict]) -> list[list[dict]]:
     return [groups[k] for k in sorted(groups)]
 
 
-def _summarise(units: list[dict], source: str, t0: float) -> None:
+def _summarise(units: list[dict], source: str, t0: float, budget: dict) -> None:
     counts: dict[str, int] = {}
     for u in units:
         counts[u["kind"]] = counts.get(u["kind"], 0) + 1
+    dropped = budget.get("dropped", 0)
     log.info("extract", "done", {
         "source": _label(source),
         "units": len(units),
@@ -200,6 +209,9 @@ def _summarise(units: list[dict], source: str, t0: float) -> None:
         "breakdown": ",".join(f"{k}={v}" for k, v in sorted(counts.items())) or "none",
         "ms": int((time.time() - t0) * 1000),
     })
+    if dropped:
+        log.warn("extract", "forwarded messages dropped at capacity — RAISE MAX_GROUPS",
+                 {"source": _label(source), "dropped": dropped, "maxGroups": MAX_GROUPS})
 
 
 async def collect_units(data: bytes, mime_type: str, source: str = "") -> list[dict]:
@@ -215,8 +227,9 @@ async def collect_units(data: bytes, mime_type: str, source: str = "") -> list[d
     log.info("extract", "start", {
         "source": _label(source), "mime": _base_mime(mime_type), "bytes": len(data or b""),
     })
-    units = await _walk(data, mime_type, source, 0, _new_budget(), group=0)
-    _summarise(units, source, t0)
+    budget = _new_budget()
+    units = await _walk(data, mime_type, source, 0, budget, group=0)
+    _summarise(units, source, t0, budget)
     return units
 
 
@@ -239,5 +252,5 @@ async def collect_message_units(email_unit: dict, attachments: list[dict],
         units.extend(await _walk(att["data"], att["mime_type"], att["filename"] or source,
                                  1, budget, group=0))
 
-    _summarise(units, source, t0)
+    _summarise(units, source, t0, budget)
     return units
