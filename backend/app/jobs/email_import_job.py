@@ -13,6 +13,7 @@ from app.email_import.gmail_query import build_gmail_query
 from app.email_import.mime_text_extractor import extract_payload_text
 from app.extract.html_text import extract_email_text
 from app.extract.pipeline import collect_message_units, group_units
+from app.services.expand_items import build_item_rows, priced_items
 from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
 from app.sheets import (
     append_transactions,
@@ -157,7 +158,6 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 origin_subject = (origin or {}).get("subject") or subject
                 origin_from = (origin or {}).get("from") or from_
                 for tx in parsed["transactions"]:
-                    fold_items(tx)  # emails name dishes but rarely price them
                     parsed_rows.append((tx, origin_subject, origin_from))
                 if parsed["skipReason"]:
                     skip_reasons.append(parsed["skipReason"])
@@ -182,38 +182,51 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     result["skipped"] += 1
                 continue
 
-            # A statement bundle yields many rows; a purchase yields exactly one.
             now = now_iso()
             msg_tx_ids: list[str] = []
             rows_to_write: list[dict] = []
             for transaction, origin_subject, origin_from in parsed_rows:
-                tx = {
-                    "id": str(uuid.uuid4()),
+                base = {
                     "date": transaction["date"],
                     "time": transaction["time"] if transaction["time"] != "00:00" else received_time,
-                    "amount": transaction["amount"],
                     "merchant": transaction["merchant"],
                     "category": transaction["category"],
                     "subcategory": transaction.get("subcategory"),
                     "original_amount": transaction.get("original_amount"),
                     "original_currency": transaction.get("original_currency"),
-                    "item_name": transaction.get("item_name"),
-                    "quantity": transaction.get("quantity"),
                     "payment_method": transaction["payment_method"],
                     "notes": transaction.get("notes"),
                     "tags": transaction.get("tags"),
                     "source": "email",
                     "raw_input": f"{origin_subject} | {origin_from}"[:500],
-                    "created_at": now,
-                    "updated_at": now,
-                    "status": "done",
                 }
 
-                rows_to_write.append(tx)
-                msg_tx_ids.append(tx["id"])
+                # Same rule as an uploaded PDF and a photographed receipt: a
+                # priced, itemised bill becomes a row each. An order email that
+                # prices its lines should not land differently just because it
+                # arrived by mail instead of as an attachment.
+                items = priced_items(transaction.get("items"))
+                if len(items) > 1:
+                    built = build_item_rows(base, items, now, transaction["amount"])
+                else:
+                    fold_items(transaction)
+                    built = [{
+                        **base,
+                        "id": str(uuid.uuid4()),
+                        "amount": transaction["amount"],
+                        "item_name": transaction.get("item_name"),
+                        "quantity": transaction.get("quantity"),
+                        "notes": transaction.get("notes"),
+                        "status": "done",
+                        "created_at": now,
+                        "updated_at": now,
+                    }]
 
-                log.info("email", f"imported ₹{tx['amount']} @ {tx['merchant']}",
-                         {"category": tx["category"], "subject": subject})
+                for tx in built:
+                    rows_to_write.append(tx)
+                    msg_tx_ids.append(tx["id"])
+                log.info("email", f"imported ₹{transaction['amount']} @ {transaction['merchant']}",
+                         {"category": transaction["category"], "rows": len(built), "subject": subject})
 
             # One request for the whole message, however many rows it produced.
             await append_transactions(session.access_token, session.sheet_id, rows_to_write)
