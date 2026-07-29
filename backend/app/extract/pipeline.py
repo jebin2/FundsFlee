@@ -30,12 +30,12 @@ from app.extract.pdf import PAGE_IMAGE_MIME, PdfError, extract_pdf
 # this is a mail loop, not a bank alert.
 MAX_DEPTH = 2
 # Groups are what cost money — one AI call each — so that is the real limit.
-MAX_GROUPS = 50
+MAX_GROUPS = 60
 # Units are only a runaway guard. It must stay well clear of MAX_GROUPS times a
 # typical group size (a Zomato order is 1 email + 3 invoices), because a group
 # truncated halfway is worse than one skipped: the model would price an order
 # from whichever invoices happened to fit.
-MAX_UNITS = 400
+MAX_UNITS = 500
 
 PDF_MIME = "application/pdf"
 EML_MIME = "message/rfc822"

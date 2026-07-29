@@ -21,7 +21,7 @@ MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 # A mail forwarding a batch of alerts can legitimately carry a few dozen .eml
 # parts, so this cannot be small. Each one costs an AI call downstream, which is
 # what actually bounds the work — see MAX_UNITS in extract.pipeline.
-MAX_ATTACHMENTS_PER_MESSAGE = 30
+MAX_ATTACHMENTS_PER_MESSAGE = 60
 
 
 def _base_mime(mime_type: str) -> str:
