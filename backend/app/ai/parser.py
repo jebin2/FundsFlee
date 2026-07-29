@@ -63,7 +63,7 @@ Field rules:
 - category: one of — Food & Dining, Transport, Shopping, Entertainment, Health, Bills & Utilities, Education, Personal Care, Gifts & Donations, Others.
 - subcategory: a more specific label when one is obvious, else null.
 - payment_method: UPI | Card | NetBanking | Cash | Other. For UPI/bank SMS, "debited"/"paid"/"transferred" are expenses and the merchant is the payee, not the bank. For credit cards look for "spent"/"transaction"/"purchase".
-- date: YYYY-MM-DD. The transaction date, not the email received date. If absent, use today's date.
+- date: YYYY-MM-DD. The date the purchase or debit happened, as stated in the document — an order date, a statement line's date, a payment date. If the document does not state one, fall back to the "Received:" date of the email it came from. Only use today's date when there is neither. An order email that arrived weeks ago is NOT dated today.
 - time: HH:MM 24h. Use "00:00" if absent.
 - items: EVERY line item named anywhere — dishes, products, receipt lines. "1 X High Protein - Supreme Boneless Chicken Biryani" becomes {"name":"High Protein - Supreme Boneless Chicken Biryani","qty":1}. Give price only when that line's own price is stated; never split the total yourself. Return [] when nothing is itemised.
 - item_name: specific product/service purchased, e.g. "Airtel Mobile Recharge". Leave null when items already covers it.
@@ -99,6 +99,8 @@ Respond with valid JSON only — no markdown fences, no explanation:
 
 # ── Cheap pre-filters (no AI call) ───────────────────────────────────────────
 import re  # noqa: E402
+
+_ISO_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 _TRANSACTION_SIGNALS = re.compile(
     r"debited|credited|paid|transaction|charged|₹|inr|rs\.|rupee|amount|payment",
@@ -237,6 +239,17 @@ def fold_items(tx: dict) -> None:
 
 
 # ── Prompt assembly ──────────────────────────────────────────────────────────
+def _unit_date(unit: dict) -> str:
+    """The email's own date, however the extractor supplied it."""
+    value = unit.get("date")
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+    text = str(value).strip()
+    return text[:10] if _ISO_DATE_PREFIX.match(text) else ""
+
+
 def build_prompt(units: list[dict], region: str, today_date: str) -> str:
     parts: list[str] = []
     if region:
@@ -247,6 +260,12 @@ def build_prompt(units: list[dict], region: str, today_date: str) -> str:
         if unit["kind"] == "email":
             parts.append(f"From: {unit.get('from', '')}")
             parts.append(f"Subject: {unit.get('subject', '')}")
+            # Without this the model had no idea when the mail arrived and
+            # dated every undated order today — which also put it outside the
+            # duplicate check's window, so the same order imported twice.
+            received = _unit_date(unit)
+            if received:
+                parts.append(f"Received: {received}")
             parts.append("--- EMAIL BODY ---")
             parts.append(unit.get("text", "")[:MAX_EMAIL_CHARS])
         elif unit["kind"] == "document":

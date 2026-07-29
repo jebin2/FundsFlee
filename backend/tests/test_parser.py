@@ -318,6 +318,40 @@ class TestSkipPaths:
         assert _run([_email()])["skipReason"] == "validation_failed"
 
 
+class TestReceivedDate:
+    """Without the email's own date the model dated every undated order today,
+    which also pushed it outside the duplicate check's window — so the same
+    order imported from a PDF and from its email never matched."""
+
+    def test_received_date_reaches_the_prompt(self, monkeypatch):
+        cap = {}
+        _fake_text(monkeypatch, {"doc_type": "purchase", "transactions": [_row(426.11)]}, cap)
+        _run([{**_email(), "date": "2026-07-04"}])
+        assert "Received: 2026-07-04" in cap["prompt"]
+
+    def test_a_datetime_is_accepted(self, monkeypatch):
+        from datetime import datetime, timezone
+        cap = {}
+        _fake_text(monkeypatch, {"doc_type": "purchase", "transactions": [_row(426.11)]}, cap)
+        _run([{**_email(), "date": datetime(2026, 7, 4, 11, 28, tzinfo=timezone.utc)}])
+        assert "Received: 2026-07-04" in cap["prompt"]
+
+    def test_no_date_omits_the_line(self, monkeypatch):
+        cap = {}
+        _fake_text(monkeypatch, {"doc_type": "purchase", "transactions": [_row(426.11)]}, cap)
+        _run([{**_email(), "date": None}])
+        assert "Received:" not in cap["prompt"]
+
+    def test_a_junk_date_is_ignored_not_forwarded(self, monkeypatch):
+        cap = {}
+        _fake_text(monkeypatch, {"doc_type": "purchase", "transactions": [_row(426.11)]}, cap)
+        _run([{**_email(), "date": "not a date"}])
+        assert "Received:" not in cap["prompt"]
+
+    def test_the_prompt_says_not_to_default_to_today(self):
+        assert "NOT dated today" in mod.SYSTEM_PROMPT
+
+
 class TestPromptAssembly:
     def test_units_are_labelled(self, monkeypatch):
         cap = {}

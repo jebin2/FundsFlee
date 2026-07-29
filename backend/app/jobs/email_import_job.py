@@ -95,6 +95,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             subject = ""
             body_text = ""
             received_time = "00:00"
+            received_date = None
             payload: dict = {}
 
             try:
@@ -106,9 +107,11 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 from_ = next((h.get("value") or "" for h in headers if (h.get("name") or "").lower() == "from"), "")
                 subject = next((h.get("value") or "" for h in headers if (h.get("name") or "").lower() == "subject"), "")
                 if msg_res.get("internalDate"):
-                    received_time = datetime.fromtimestamp(
+                    received = datetime.fromtimestamp(
                         int(msg_res["internalDate"]) / 1000, tz=timezone.utc
-                    ).strftime("%H:%M")
+                    )
+                    received_time = received.strftime("%H:%M")
+                    received_date = received.strftime("%Y-%m-%d")
                 extracted = extract_payload_text(payload)
                 body_text = extract_email_text(extracted["text"], extracted["mimeType"])
             except Exception:
@@ -133,7 +136,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
 
             units = await collect_message_units(
                 {"kind": "email", "text": body_text, "from": from_,
-                 "subject": subject, "date": None, "source": subject},
+                 "subject": subject, "date": received_date, "source": subject},
                 attachments, subject,
             )
             # One AI call per group. A group is one payment (an order plus its
