@@ -115,7 +115,7 @@ async def parse_statement_async(request: Request, session: SheetSession = Depend
     if len(data) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 20MB)")
 
-    result = await create_statement_import_request(session, data)
+    result = await create_statement_import_request(session, data, file.filename or "")
     return {"ok": True, "txId": result["txId"]}
 
 

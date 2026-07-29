@@ -39,13 +39,16 @@ def create_queued_receipt_transaction(receipt_url: str, id: str | None = None) -
     }
 
 
-def create_queued_statement_transaction(receipt_url: str) -> dict:
+def create_queued_statement_transaction(receipt_url: str, filename: str = "") -> dict:
     return {
         **_base_placeholder(),
         "merchant": "Bank Statement",
         "source": "import",
         "status": "queued",
         "receipt_url": receipt_url,
+        # The rows extracted from this file inherit it, so each one records
+        # which upload it came from.
+        "raw_input": filename[:500],
     }
 
 

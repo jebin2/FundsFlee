@@ -10,13 +10,15 @@ from app.jobs.statement_parse_job import run_statement_parse_job
 from app.sheets import append_transaction, get_or_create_receipts_folder, upload_receipt_to_drive
 
 
-async def create_statement_import_request(session: SheetSession, buffer: bytes) -> dict:
+async def create_statement_import_request(
+    session: SheetSession, buffer: bytes, filename: str = ""
+) -> dict:
     folder_id = await get_or_create_receipts_folder(session.access_token, session.sheet_id)
-    filename = f"statement_{today_iso()}_{int(time.time() * 1000)}.pdf"
+    drive_name = f"statement_{today_iso()}_{int(time.time() * 1000)}.pdf"
     uploaded = await upload_receipt_to_drive(
-        session.access_token, folder_id, buffer, filename, "application/pdf"
+        session.access_token, folder_id, buffer, drive_name, "application/pdf"
     )
-    placeholder = create_queued_statement_transaction(uploaded["viewUrl"])
+    placeholder = create_queued_statement_transaction(uploaded["viewUrl"], filename or drive_name)
     await append_transaction(session.access_token, session.sheet_id, placeholder)
 
     async def _job():

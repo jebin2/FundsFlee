@@ -7,7 +7,7 @@ every other row.
 import re
 import uuid
 
-from app.ai.parser import NO_FLOOR, parse_units
+from app.ai.parser import NO_FLOOR, fold_items, parse_units
 from app.core.dates import today_iso, now_iso
 from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession
@@ -54,10 +54,13 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
         now = now_iso()
         rows_to_write = []
         for row in rows:
+            # The prompt leaves item_name null when items covers it, so without
+            # this the extracted line items were parsed and then dropped.
+            fold_items(row)
             tx = {
                 "id": str(uuid.uuid4()),
                 "date": row.get("date"),
-                "time": "00:00",
+                "time": row.get("time") or "00:00",
                 "amount": row.get("amount"),
                 "merchant": row.get("merchant"),
                 "category": row.get("category"),
@@ -66,6 +69,8 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
                 "original_currency": row.get("original_currency"),
                 "item_name": row.get("item_name"),
                 "tags": row.get("tags"),
+                "quantity": row.get("quantity"),
+                "raw_input": placeholder.get("raw_input"),
                 "payment_method": row.get("payment_method") or "Other",
                 "notes": row.get("notes"),
                 "source": "import",
