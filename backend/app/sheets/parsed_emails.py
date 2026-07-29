@@ -45,10 +45,21 @@ def _get_all_rows_sync(sheets, sheet_id: str) -> list[list]:
 # Load ALL processed email IDs into a set — call ONCE per job run,
 # then check membership in memory instead of hitting the Sheets API per email.
 async def get_processed_email_ids(access_token: str, sheet_id: str) -> set[str]:
+    """Ids the import should not look at again.
+
+    "failed" is deliberately excluded. A failure here means the AI chain was
+    unreachable or returned nothing usable — a transient condition — and
+    treating it as final meant one bad minute lost that email permanently, with
+    the only recovery being to delete its row from the sheet by hand. "parsed"
+    and "skipped" are real verdicts and stay terminal.
+    """
     def work():
         sheets = get_sheets_client(access_token)
         rows = _get_all_rows_sync(sheets, sheet_id)
-        return {_at(r, COLS["email_id"]) for r in rows if _at(r, COLS["email_id"])}
+        return {
+            _at(r, COLS["email_id"]) for r in rows
+            if _at(r, COLS["email_id"]) and _at(r, COLS["status"]) != "failed"
+        }
     return await asyncio.to_thread(work)
 
 
@@ -74,6 +85,21 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
             record["status"],
             ",".join(record["txIds"]),
         ]
+
+        # Upsert, because a failed email is retried on the next run: appending
+        # would leave a second row for the same message and quietly inflate the
+        # scanned/failed counts in settings.
+        existing = _get_all_rows_sync(sheets, sheet_id)
+        for i, r in enumerate(existing):
+            if _at(r, COLS["email_id"]) == record["emailId"]:
+                with_sheets_retry(lambda n=i + 2: sheets.spreadsheets().values().update(
+                    spreadsheetId=sheet_id,
+                    range=f"parsed_emails!A{n}:F{n}",
+                    valueInputOption="RAW",
+                    body={"values": [row]},
+                ).execute())
+                return
+
         with_sheets_retry(lambda: sheets.spreadsheets().values().append(
             spreadsheetId=sheet_id,
             range="parsed_emails!A2",
