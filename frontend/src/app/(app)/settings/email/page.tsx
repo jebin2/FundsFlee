@@ -26,7 +26,7 @@ export default function EmailImportSettingsPage() {
   const [fromContains, setFromContains] = useState<string[]>([]);
   const [subjectContains, setSubjectContains] = useState<string[]>([]);
   const [daysBack,     setDaysBack]     = useState(7);
-  const [attachments,  setAttachments]  = useState(false);
+  const [attachments,  setAttachments]  = useState(true);
   const [filterInput,  setFilterInput]  = useState("");
   const [subjectInput, setSubjectInput] = useState("");
   const [error,        setError]        = useState("");
