@@ -6,6 +6,7 @@ import { usePollingInterval } from "@/features/settings/hooks/usePollingInterval
 
 interface EmailStatus {
   fromContains: string[];
+  subjectContains: string[];
   daysBack: number;
   lastRun: string | null;
   totalTxImported: number;
@@ -23,11 +24,14 @@ export default function EmailImportSettingsPage() {
   const [jobState,     setJobState]     = useState<JobState>("idle");
   const [status,       setStatus]       = useState<EmailStatus | null>(null);
   const [fromContains, setFromContains] = useState<string[]>([]);
+  const [subjectContains, setSubjectContains] = useState<string[]>([]);
   const [daysBack,     setDaysBack]     = useState(7);
   const [attachments,  setAttachments]  = useState(false);
   const [filterInput,  setFilterInput]  = useState("");
+  const [subjectInput, setSubjectInput] = useState("");
   const [error,        setError]        = useState("");
   const filterInputRef = useRef<HTMLInputElement>(null);
+  const subjectInputRef = useRef<HTMLInputElement>(null);
   const { start: startPolling } = usePollingInterval();
 
   const loadStatus = useCallback(async (): Promise<EmailStatus | null> => {
@@ -43,6 +47,7 @@ export default function EmailImportSettingsPage() {
     if (data) {
       setStatus(data);
       setFromContains(data.fromContains);
+      setSubjectContains(data.subjectContains ?? []);
       setDaysBack(data.daysBack);
       setAttachments(data.attachments);
       if (data.runningAt && Date.now() - new Date(data.runningAt).getTime() < 5 * 60 * 1000) {
@@ -61,13 +66,19 @@ export default function EmailImportSettingsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  async function saveConfig(filters: string[], days: number, attach: boolean = attachments) {
+  type ConfigPatch = Partial<{
+    fromContains: string[]; subjectContains: string[]; daysBack: number; attachments: boolean;
+  }>;
+
+  // Sends the whole config, with the patch applied over current state — state
+  // set in the same handler is not yet visible here.
+  async function saveConfig(patch: ConfigPatch = {}) {
     setError("");
     try {
       const res = await fetch("/api/email/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromContains: filters, daysBack: days, attachments: attach }),
+        body: JSON.stringify({ fromContains, subjectContains, daysBack, attachments, ...patch }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -85,21 +96,37 @@ export default function EmailImportSettingsPage() {
     setFromContains(next);
     setFilterInput("");
     filterInputRef.current?.focus();
-    void saveConfig(next, daysBack);
+    void saveConfig({ fromContains: next });
   }
 
   function removeFilter(f: string) {
     const next = fromContains.filter((x) => x !== f);
     setFromContains(next);
-    void saveConfig(next, daysBack);
+    void saveConfig({ fromContains: next });
+  }
+
+  function addSubject() {
+    const val = subjectInput.trim();
+    if (!val || subjectContains.includes(val)) { setSubjectInput(""); return; }
+    const next = [...subjectContains, val];
+    setSubjectContains(next);
+    setSubjectInput("");
+    subjectInputRef.current?.focus();
+    void saveConfig({ subjectContains: next });
+  }
+
+  function removeSubject(s: string) {
+    const next = subjectContains.filter((x) => x !== s);
+    setSubjectContains(next);
+    void saveConfig({ subjectContains: next });
   }
 
   async function fetchNow() {
-    if (fromContains.length === 0) { setError("Add at least one sender filter first."); return; }
+    if (!hasFilters) { setError("Add a sender or subject filter first."); return; }
     setError("");
     setJobState("running");
     try {
-      await saveConfig(fromContains, daysBack);
+      await saveConfig();
       const res = await fetch("/api/email/fetch?manual=1", { method: "POST" });
       if (!res.ok) { setJobState("idle"); setError("Could not start fetch — please try again."); return; }
       startPolling(async (_, stop) => {
@@ -120,7 +147,8 @@ export default function EmailImportSettingsPage() {
     });
   }
 
-  const isActive = fromContains.length > 0;
+  const hasFilters = fromContains.length > 0 || subjectContains.length > 0;
+  const isActive = hasFilters;
 
   return (
     <div className="max-w-lg mx-auto px-5 pb-24">
@@ -154,8 +182,8 @@ export default function EmailImportSettingsPage() {
                 {isActive
                   ? status?.lastRun
                     ? `Last run ${formatDate(status.lastRun)} · ${status.totalTxImported} imported total`
-                    : `${fromContains.length} sender${fromContains.length !== 1 ? "s" : ""} · never run yet`
-                  : "Add sender filters below to start"}
+                    : `${fromContains.length + subjectContains.length} filter${fromContains.length + subjectContains.length !== 1 ? "s" : ""} · never run yet`
+                  : "Add a sender or subject filter below to start"}
               </p>
             </div>
           </div>
@@ -200,6 +228,52 @@ export default function EmailImportSettingsPage() {
               </div>
               <p style={{ fontSize: 12, color: "var(--color-outline)" }}>
                 Partial match — &quot;hdfcbank&quot; matches any sender whose address contains that text.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p style={{ fontSize: 15, fontWeight: 600, color: "var(--color-on-surface)" }}>Subject filters</p>
+            <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)", lineHeight: 1.5 }}>
+              For mail you forward from another account, where the sender is you. Matched in
+              addition to the senders above, not instead of them.
+            </p>
+            <div className="rounded-2xl border p-4 flex flex-col gap-3 mt-1"
+              style={{ borderColor: "var(--color-outline-variant)", background: "var(--color-surface-container-lowest)" }}>
+              {subjectContains.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {subjectContains.map((s) => (
+                    <span key={s} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium"
+                      style={{ background: "var(--color-primary-fixed)", color: "var(--color-primary)" }}>
+                      {s}
+                      <button onClick={() => removeSubject(s)} style={{ lineHeight: 1, display: "flex" }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>close</span>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  ref={subjectInputRef}
+                  type="text"
+                  value={subjectInput}
+                  onChange={(e) => setSubjectInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addSubject()}
+                  placeholder="e.g. debited, your order from"
+                  className="flex-1 px-3 py-2.5 rounded-xl outline-none text-sm"
+                  style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface)", border: "1px solid var(--color-outline-variant)" }}
+                />
+                <button onClick={addSubject} disabled={!subjectInput.trim()}
+                  className="px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-1"
+                  style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", opacity: subjectInput.trim() ? 1 : 0.4 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                  Add
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--color-outline)" }}>
+                Partial match on the subject line. Keep these specific — a broad word like
+                &quot;payment&quot; will pull in a lot of mail.
               </p>
             </div>
           </div>
@@ -270,7 +344,7 @@ export default function EmailImportSettingsPage() {
                 onClick={() => {
                   const next = !attachments;
                   setAttachments(next);
-                  void saveConfig(fromContains, daysBack, next);
+                  void saveConfig({ attachments: next });
                 }}
                 className="flex-shrink-0 rounded-full"
                 style={{
@@ -294,7 +368,7 @@ export default function EmailImportSettingsPage() {
                 <input
                   type="number" min={1} max={365} value={daysBack}
                   onChange={(e) => setDaysBack(Math.max(1, parseInt(e.target.value) || 7))}
-                  onBlur={() => void saveConfig(fromContains, daysBack)}
+                  onBlur={() => void saveConfig()}
                   className="w-14 px-2 py-1 rounded-lg text-center font-semibold outline-none"
                   style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface)", fontSize: 15, border: "1px solid var(--color-outline-variant)" }}
                 />
@@ -302,9 +376,9 @@ export default function EmailImportSettingsPage() {
               </div>
               <button
                 onClick={fetchNow}
-                disabled={jobState !== "idle" || fromContains.length === 0}
+                disabled={jobState !== "idle" || !hasFilters}
                 className="px-5 py-3 rounded-2xl font-semibold flex items-center gap-2 flex-shrink-0"
-                style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", fontSize: 14, opacity: (jobState !== "idle" || fromContains.length === 0) ? 0.4 : 1 }}>
+                style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", fontSize: 14, opacity: (jobState !== "idle" || !hasFilters) ? 0.4 : 1 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                   {jobState === "running" ? "hourglass_empty" : "download"}
                 </span>

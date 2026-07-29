@@ -9,6 +9,7 @@ async def read_email_import_config(session: SheetSession) -> dict:
     meta = await get_meta_values(session.access_token, session.sheet_id)
     return {
         "fromContains": safe_json_parse(meta.get("email_import_from_contains"), []),
+        "subjectContains": safe_json_parse(meta.get("email_import_subject_contains"), []),
         "daysBack": js_parse_int(meta.get("email_import_days_back")) if meta.get("email_import_days_back") else 7,
         "region": meta.get("region") or "",
         # Opt-in: downloading and AI-parsing attachments costs quota and money,

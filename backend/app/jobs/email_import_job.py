@@ -33,7 +33,8 @@ async def _set_meta_safe(session: SheetSession, key: str, value: str) -> None:
 async def run_email_import_job(session: SheetSession, manual: bool = False) -> dict:
     config = await read_email_import_config(session)
 
-    if len(config["fromContains"]) == 0:
+    # Either filter alone is enough — subject-only catches forwarded alerts.
+    if len(config["fromContains"]) == 0 and len(config["subjectContains"]) == 0:
         return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
     if config["runningAt"]:
@@ -47,12 +48,15 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
     try:
         tag = "manual" if manual else "auto"
         log.info("email", f"started ({tag})",
-                 {"filters": ",".join(config["fromContains"]), "daysBack": config["daysBack"],
+                 {"filters": ",".join(config["fromContains"]) or "-",
+                  "subjects": ",".join(config["subjectContains"]) or "-",
+                  "daysBack": config["daysBack"],
                   "attachments": "on" if config["attachments"] else "off"})
 
         gmail = get_gmail_client(session.access_token)
         query = build_gmail_query(config["fromContains"], config["daysBack"],
-                                  None if manual else config["lastRun"])
+                                  None if manual else config["lastRun"],
+                                  config["subjectContains"])
         log.info("email", f"gmail query: {query}")
 
         try:

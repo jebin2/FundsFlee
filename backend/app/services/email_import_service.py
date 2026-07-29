@@ -17,6 +17,11 @@ async def save_email_import_config(session: SheetSession, update: dict) -> None:
             session.access_token, session.sheet_id, "email_import_from_contains",
             json.dumps(update["fromContains"], ensure_ascii=False, separators=(",", ":")),
         ))
+    if update.get("subjectContains") is not None:
+        writes.append(set_meta_value(
+            session.access_token, session.sheet_id, "email_import_subject_contains",
+            json.dumps(update["subjectContains"], ensure_ascii=False, separators=(",", ":")),
+        ))
     if update.get("daysBack") is not None:
         writes.append(set_meta_value(
             session.access_token, session.sheet_id, "email_import_days_back", str(update["daysBack"]),
@@ -34,6 +39,7 @@ async def get_email_import_status(session: SheetSession) -> dict:
     meta = await get_meta_values(session.access_token, session.sheet_id)
     return {
         "fromContains": safe_json_parse(meta.get("email_import_from_contains"), []),
+        "subjectContains": safe_json_parse(meta.get("email_import_subject_contains"), []),
         "daysBack": js_parse_int(meta.get("email_import_days_back")) if meta.get("email_import_days_back") else 7,
         "attachments": meta.get("email_import_attachments") == "1",
         "lastRun": meta.get("email_import_last_run") or None,
