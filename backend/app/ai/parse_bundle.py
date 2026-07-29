@@ -14,6 +14,8 @@ model reports back as doc_type.
 Emails with no attachments keep using parse_email.parse_email_transaction — the
 proven single-body path — so this only runs when there is something to merge.
 """
+import time
+
 from app.ai.client import generate_text
 from app.ai.parse_email import validate_transaction
 from app.ai.parse_json import try_parse_ai_json
@@ -105,28 +107,65 @@ async def parse_email_bundle(
     Every row still goes through parse_email's validation gauntlet — the model
     returning JSON is not evidence the JSON is sane.
     """
+    t0 = time.time()
     parseable = [u for u in units if u["kind"] in ("email", "document") and u.get("text")]
     if not parseable:
+        log.warn("bundle", "no parseable units — nothing sent to AI",
+                 {"units": len(units), "kinds": ",".join(sorted({u["kind"] for u in units})) or "none"})
         return {"transactions": [], "docType": "purchase", "skipReason": "nothing_to_parse"}
 
     prompt = build_bundle_prompt(parseable, region, today_date)
+    head = next((u for u in parseable if u["kind"] == "email"), {})
+    docs = [u for u in parseable if u["kind"] == "document"]
+
+    log.info("bundle", "parsing", {
+        "from": str(head.get("from", ""))[:80],
+        "subject": str(head.get("subject", ""))[:80],
+        "emailUnits": len(parseable) - len(docs),
+        "docUnits": len(docs),
+        "docs": ",".join(d.get("source") or "?" for d in docs) or "-",
+        "promptChars": len(prompt),
+    })
 
     try:
         raw = await generate_text(prompt, BUNDLE_SYSTEM_PROMPT, 4096)
     except Exception as err:
-        log.error("bundle", "ai call failed", err)
+        log.error("bundle", "ai call failed", err, {"promptChars": len(prompt),
+                                                    "ms": int((time.time() - t0) * 1000)})
         return {"transactions": [], "docType": "purchase", "skipReason": "parse_error"}
 
+    ai_ms = int((time.time() - t0) * 1000)
     parsed = try_parse_ai_json(raw)
     if not isinstance(parsed, dict):
+        log.warn("bundle", "AI response was not a JSON object",
+                 {"ms": ai_ms, "rawChars": len(raw), "rawHead": raw[:160].replace("\n", " ")})
         return {"transactions": [], "docType": "purchase", "skipReason": "ai_null"}
 
     doc_type = parsed.get("doc_type") if parsed.get("doc_type") in ("purchase", "statement") else "purchase"
+    if parsed.get("doc_type") not in ("purchase", "statement"):
+        log.warn("bundle", "unrecognised doc_type — treating as purchase",
+                 {"docType": str(parsed.get("doc_type"))[:40]})
+
     rows = parsed.get("transactions")
     if not isinstance(rows, list) or not rows:
+        log.info("bundle", "AI reported no debit to record", {"docType": doc_type, "ms": ai_ms})
         return {"transactions": [], "docType": doc_type, "skipReason": "ai_null"}
 
-    valid = [tx for tx in (validate_transaction(r, today_date) for r in rows if isinstance(r, dict)) if tx]
+    log.info("bundle", "AI returned rows", {"docType": doc_type, "rows": len(rows), "ms": ai_ms})
+
+    valid: list[dict] = []
+    dropped: list[str] = []
+    for r in rows:
+        tx = validate_transaction(r, today_date) if isinstance(r, dict) else None
+        if tx:
+            valid.append(tx)
+        else:
+            dropped.append(f"{(r or {}).get('merchant', '?')}/{(r or {}).get('amount', '?')}"
+                           if isinstance(r, dict) else "non-object")
+    if dropped:
+        log.warn("bundle", "rows failed validation", {"dropped": len(dropped),
+                                                      "kept": len(valid),
+                                                      "rejected": "; ".join(dropped[:8])})
     if not valid:
         return {"transactions": [], "docType": doc_type, "skipReason": "validation_failed"}
 
@@ -134,8 +173,15 @@ async def parse_email_bundle(
     # model multiplied the component invoices after all. Keep the largest —
     # the customer-facing total always exceeds any single component.
     if doc_type == "purchase" and len(valid) > 1:
-        log.warn("bundle", "purchase returned multiple rows — keeping the largest",
-                 {"rows": len(valid), "amounts": [t["amount"] for t in valid]})
+        log.warn("bundle", "purchase returned multiple rows — collapsing to the largest",
+                 {"rows": len(valid), "amounts": ",".join(str(t["amount"]) for t in valid)})
         valid = [max(valid, key=lambda t: t["amount"])]
 
+    log.info("bundle", "done", {
+        "docType": doc_type,
+        "rows": len(valid),
+        "amounts": ",".join(str(t["amount"]) for t in valid[:12]),
+        "merchants": " | ".join(t["merchant"] for t in valid[:6]),
+        "ms": int((time.time() - t0) * 1000),
+    })
     return {"transactions": valid, "docType": doc_type, "skipReason": None}

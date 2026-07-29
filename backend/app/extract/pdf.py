@@ -69,13 +69,18 @@ def _extract_pdf_sync(data: bytes, max_pages: int = MAX_PAGES, dpi: int = RASTER
         truncated = page_count > considered
 
         texts = [doc[i].get_text() for i in range(considered)]
-        if sum(len(t.strip()) for t in texts) / considered >= MIN_CHARS_PER_PAGE:
+        # Surfaced so callers can log why a PDF took the branch it took — the
+        # first thing worth knowing when extraction looks wrong.
+        chars_per_page = round(sum(len(t.strip()) for t in texts) / considered, 1)
+
+        if chars_per_page >= MIN_CHARS_PER_PAGE:
             return {
                 "kind": "text",
                 "text": _tidy("\n\n".join(texts)),
                 "pages": [],
                 "page_count": page_count,
                 "truncated": truncated,
+                "chars_per_page": chars_per_page,
             }
 
         return {
@@ -84,6 +89,7 @@ def _extract_pdf_sync(data: bytes, max_pages: int = MAX_PAGES, dpi: int = RASTER
             "pages": [_render_page(doc[i], dpi) for i in range(considered)],
             "page_count": page_count,
             "truncated": truncated,
+            "chars_per_page": chars_per_page,
         }
 
 
