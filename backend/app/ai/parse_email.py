@@ -103,7 +103,7 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 
 
-def _validate(raw: dict, today_date: str) -> dict | None:
+def validate_transaction(raw: dict, today_date: str) -> dict | None:
     raw_amount = raw.get("amount")
     amount = raw_amount if isinstance(raw_amount, (int, float)) and not isinstance(raw_amount, bool) \
         else _parse_float(raw_amount if raw_amount is not None else "0")
@@ -215,7 +215,7 @@ async def parse_email_transaction(
         return {"transaction": None, "skipReason": "ai_null"}
 
     # 6. Validation gauntlet
-    tx = _validate(parsed, today_date)
+    tx = validate_transaction(parsed, today_date)
     if not tx:
         return {"transaction": None, "skipReason": "validation_failed"}
 
