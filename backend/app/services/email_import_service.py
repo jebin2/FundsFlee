@@ -6,33 +6,27 @@ from app.core.deps import SheetSession
 from app.core.logger import log
 from app.core.numbers import js_parse_int
 from app.core.safe_json import safe_json_parse
-from app.sheets import get_meta_values, set_meta_value
+from app.sheets import get_meta_values, set_meta_values
 
 
 async def save_email_import_config(session: SheetSession, update: dict) -> None:
-    writes = []
+    """One batched write. Four separate set_meta_value calls meant four reads
+    and four writes for a single Save, which is how a settings change could
+    exhaust the 60-reads-per-minute quota on its own."""
+    values: dict[str, str] = {}
 
     if update.get("fromContains") is not None:
-        writes.append(set_meta_value(
-            session.access_token, session.sheet_id, "email_import_from_contains",
-            json.dumps(update["fromContains"], ensure_ascii=False, separators=(",", ":")),
-        ))
+        values["email_import_from_contains"] = json.dumps(
+            update["fromContains"], ensure_ascii=False, separators=(",", ":"))
     if update.get("subjectContains") is not None:
-        writes.append(set_meta_value(
-            session.access_token, session.sheet_id, "email_import_subject_contains",
-            json.dumps(update["subjectContains"], ensure_ascii=False, separators=(",", ":")),
-        ))
+        values["email_import_subject_contains"] = json.dumps(
+            update["subjectContains"], ensure_ascii=False, separators=(",", ":"))
     if update.get("daysBack") is not None:
-        writes.append(set_meta_value(
-            session.access_token, session.sheet_id, "email_import_days_back", str(update["daysBack"]),
-        ))
+        values["email_import_days_back"] = str(update["daysBack"])
     if update.get("attachments") is not None:
-        writes.append(set_meta_value(
-            session.access_token, session.sheet_id, "email_import_attachments",
-            "1" if update["attachments"] else "0",
-        ))
+        values["email_import_attachments"] = "1" if update["attachments"] else "0"
 
-    await asyncio.gather(*writes)
+    await set_meta_values(session.access_token, session.sheet_id, values)
 
 
 async def get_email_import_status(session: SheetSession) -> dict:

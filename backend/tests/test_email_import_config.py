@@ -48,10 +48,10 @@ class TestSaving:
     def _capture(self, monkeypatch):
         written = {}
 
-        async def fake_set(token, sheet_id, key, value):
-            written[key] = value
+        async def fake_set(token, sheet_id, values):
+            written.update(values)
 
-        monkeypatch.setattr(service_mod, "set_meta_value", fake_set)
+        monkeypatch.setattr(service_mod, "set_meta_values", fake_set)
         return written
 
     def test_off_writes_an_explicit_zero(self, monkeypatch):

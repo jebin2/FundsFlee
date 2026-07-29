@@ -212,9 +212,32 @@ class TestMeta:
     def test_set_meta_value_updates_existing_row(self, fake):
         fake.get_responses["meta!A2:A100"] = [["region"], ["name"]]
         asyncio.run(meta_mod.set_meta_value("tok", "sheet", "name", "Jebin"))
-        update = next(c for c in fake.calls if c[0] == "update")
-        assert update[1] == "meta!B3"
-        assert update[2]["values"] == [["Jebin"]]
+        batch = next(c for c in fake.calls if c[0] == "batchUpdate")
+        assert batch[1]["data"] == [{"range": "meta!B3", "values": [["Jebin"]]}]
+
+    def test_many_keys_cost_one_read(self, fake):
+        # Each key used to read meta!A2:A100 for itself, so saving four
+        # settings was four reads against a 60-per-minute quota.
+        fake.get_responses["meta!A2:A100"] = [["region"], ["name"]]
+        asyncio.run(meta_mod.set_meta_values("tok", "sheet", {"region": "IN", "name": "J"}))
+
+        assert len([c for c in fake.calls if c[0] == "get"]) == 1
+        batch = next(c for c in fake.calls if c[0] == "batchUpdate")
+        assert batch[1]["data"] == [
+            {"range": "meta!B2", "values": [["IN"]]},
+            {"range": "meta!B3", "values": [["J"]]},
+        ]
+
+    def test_a_mixed_batch_updates_and_appends(self, fake):
+        fake.get_responses["meta!A2:A100"] = [["region"]]
+        asyncio.run(meta_mod.set_meta_values("tok", "sheet", {"region": "IN", "fresh": "v"}))
+        assert next(c for c in fake.calls if c[0] == "batchUpdate")[1]["data"] == [
+            {"range": "meta!B2", "values": [["IN"]]}]
+        assert next(c for c in fake.calls if c[0] == "append")[2]["values"] == [["fresh", "v"]]
+
+    def test_an_empty_batch_touches_nothing(self, fake):
+        asyncio.run(meta_mod.set_meta_values("tok", "sheet", {}))
+        assert fake.calls == []
 
     def test_set_meta_value_appends_new_key(self, fake):
         fake.get_responses["meta!A2:A100"] = [["region"]]

@@ -15,7 +15,7 @@ from app.sheets.drive import (
     upload_receipt_to_drive,
 )
 from app.sheets.init import init_spending_sheet, reset_sheet
-from app.sheets.meta import get_meta_values, set_meta_value
+from app.sheets.meta import get_meta_values, set_meta_value, set_meta_values
 from app.sheets.parsed_emails import (
     check_email_parsed,
     get_parsed_email_stats,
@@ -65,6 +65,7 @@ __all__ = [
     "resolve_item_suggestion",
     "save_analysis_cache",
     "set_meta_value",
+    "set_meta_values",
     "store_analysis_in_drive",
     "update_transaction_field",
     "upsert_analysis_cache_row",

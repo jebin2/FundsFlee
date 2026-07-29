@@ -1,5 +1,6 @@
 """Email import job — port of src/server/jobs/emailImportJob.ts."""
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from app.ai.parser import parse_units
@@ -18,14 +19,20 @@ from app.sheets import (
     append_transactions,
     get_processed_email_ids,
     record_parsed_email,
-    set_meta_value,
+    set_meta_values,
 )
 from app.sheets.client import get_gmail_client
 
 
+# The lock only has to look fresher than the five-minute staleness check, so
+# refreshing it per message spent two Sheets requests each — enough on a long
+# forwarded batch to exhaust the 60-reads-per-minute quota by itself.
+LOCK_REFRESH_SECONDS = 60
+
+
 async def _set_meta_safe(session: SheetSession, key: str, value: str) -> None:
     try:
-        await set_meta_value(session.access_token, session.sheet_id, key, value)
+        await set_meta_values(session.access_token, session.sheet_id, {key: value})
     except Exception:
         pass
 
@@ -44,6 +51,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
     await _set_meta_safe(session, "email_import_running_at", now_iso())
+    last_lock_refresh = time.monotonic()
 
     try:
         tag = "manual" if manual else "auto"
@@ -86,10 +94,12 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 result["skipped"] += 1
                 continue
 
-            # Refresh the lock per message. One forwarded batch can take several
-            # minutes (an AI call per order), and a stale-looking lock would let
-            # the daily cron start alongside this run and import everything twice.
-            await _set_meta_safe(session, "email_import_running_at", now_iso())
+            # Keep the lock looking alive on a long run, so the daily cron does
+            # not treat it as stale and import everything a second time — but at
+            # most once a minute, not once per message.
+            if time.monotonic() - last_lock_refresh >= LOCK_REFRESH_SECONDS:
+                await _set_meta_safe(session, "email_import_running_at", now_iso())
+                last_lock_refresh = time.monotonic()
 
             from_ = ""
             subject = ""
@@ -231,11 +241,10 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             pass
 
         try:
-            await asyncio.gather(
-                set_meta_value(session.access_token, session.sheet_id, "email_import_last_run", now_iso()),
-                set_meta_value(session.access_token, session.sheet_id, "email_import_tx_count",
-                               str(config["txCount"] + result["imported"])),
-            )
+            await set_meta_values(session.access_token, session.sheet_id, {
+                "email_import_last_run": now_iso(),
+                "email_import_tx_count": str(config["txCount"] + result["imported"]),
+            })
         except Exception:
             pass
 

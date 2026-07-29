@@ -4,7 +4,7 @@ import asyncio
 from googleapiclient.http import MediaInMemoryUpload
 
 from app.sheets.client import get_drive_client
-from app.sheets.meta import _get_meta_values_sync, _set_meta_value_sync
+from app.sheets.meta import _get_meta_values_sync, _set_meta_values_sync
 
 # appProperties are tied to our OAuth client ID — invisible in Drive UI,
 # survives renames/moves, and is the authoritative app identifier.
@@ -45,7 +45,7 @@ def get_or_create_receipts_folder_sync(access_token: str, sheet_id: str) -> str:
         ).execute()
         folder_id = folder["id"]
 
-    _set_meta_value_sync(access_token, sheet_id, "receipts_folder_id", folder_id)
+    _set_meta_values_sync(access_token, sheet_id, {"receipts_folder_id": folder_id})
     return folder_id
 
 
