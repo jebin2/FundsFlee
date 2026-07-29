@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from app.ai.parse_text import parse_transaction_text
+from app.ai.parser import fold_items
+from app.services.expand_items import build_item_rows, priced_items
 from app.config import settings
 from app.core.dates import now_iso, today_iso
 from app.core.deps import SheetSession, require_session
@@ -18,7 +20,7 @@ from app.core.google_oauth import refresh_google_token
 from app.core.logger import log
 from app.core.shortcut_plist import build_shortcut_file
 from app.core.shortcut_prepare import get_shortcut_prepare, store_shortcut_prepare
-from app.sheets import append_transaction, get_meta_values, set_meta_value
+from app.sheets import append_transactions, get_meta_values, set_meta_value
 
 router = APIRouter()
 
@@ -53,23 +55,41 @@ async def shortcut(request: Request) -> dict:
     parsed = await parse_transaction_text(text, payload.get("region") or "", today_iso())
 
     now = now_iso()
-    tx = {
-        "id": str(uuid.uuid4()),
+    base = {
         "date": parsed.get("date"),
         "time": parsed.get("time"),
-        "amount": parsed.get("amount"),
         "merchant": parsed.get("merchant"),
         "category": parsed.get("category"),
         "subcategory": parsed.get("subcategory"),
-        "item_name": parsed.get("item_name"),
         "payment_method": parsed.get("payment_method"),
+        "notes": parsed.get("notes"),
+        "tags": parsed.get("tags"),
         "source": source,
         "raw_input": text,
-        "created_at": now,
-        "updated_at": now,
     }
 
-    await append_transaction(access_token, payload["sheetId"], tx)
+    # Same rule as every other entry point.
+    items = priced_items(parsed.get("items"))
+    if len(items) > 1:
+        rows = build_item_rows(base, items, now, parsed.get("amount"))
+    else:
+        fold_items(parsed)
+        rows = [{
+            **base,
+            "id": str(uuid.uuid4()),
+            "amount": parsed.get("amount"),
+            "item_name": parsed.get("item_name"),
+            "quantity": parsed.get("quantity"),
+            "notes": parsed.get("notes"),
+            "created_at": now,
+            "updated_at": now,
+        }]
+
+    await append_transactions(access_token, payload["sheetId"], rows)
+    # Installed shortcuts read a single object here, so an itemised bill
+    # reports its first row rather than changing the response shape.
+    tx = rows[0]
+
     await set_meta_value(access_token, payload["sheetId"], "shortcut_last_used", now_iso())
 
     return {"entry": tx}

@@ -75,3 +75,31 @@ class TestPricedItems:
     def test_handles_missing_and_malformed(self):
         assert priced_items(None) == []
         assert priced_items(["nope", {"name": "x"}]) == []
+
+
+class TestEveryWriterSharesTheRule:
+    """The rule is only real if every path that turns a parse into rows applies
+    it. Two were missed on the first pass: text_parse_job expanded with
+    unfiltered items (build_item_rows indexes item["price"], so an unpriced
+    line raised KeyError) and the shortcut route ignored items entirely."""
+
+    WRITERS = [
+        "app/services/receipt_processing_service.py",
+        "app/jobs/statement_parse_job.py",
+        "app/jobs/email_import_job.py",
+        "app/jobs/text_parse_job.py",
+        "app/routers/shortcut.py",
+    ]
+
+    def test_all_of_them_filter_to_priced_items(self):
+        import pathlib as _p
+        root = _p.Path(__file__).resolve().parents[1]
+        missing = [w for w in self.WRITERS if "priced_items" not in (root / w).read_text()]
+        assert missing == [], f"writers not applying the rule: {missing}"
+
+    def test_none_of_them_expand_unfiltered(self):
+        import pathlib as _p
+        root = _p.Path(__file__).resolve().parents[1]
+        offenders = [w for w in self.WRITERS
+                     if 'parsed.get("items") or []' in (root / w).read_text()]
+        assert offenders == [], f"expanding unfiltered items: {offenders}"
