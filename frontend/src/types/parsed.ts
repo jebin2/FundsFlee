@@ -4,7 +4,6 @@ import type { PaymentMethod } from "./transaction";
 export interface ParsedTransaction {
   merchant: string;
   amount: number;
-  currency: string;
   date: string;
   time: string;
   category: string;

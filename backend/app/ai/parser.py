@@ -55,7 +55,9 @@ The ONE exception — bank and card statements:
 Extract ONLY debits — money leaving the user's account. Ignore credits, refunds, incoming transfers, balance alerts, reward points, and promotional content.
 
 Field rules:
-- amount: actual amount PAID/DEBITED in INR (positive number). Never use "available balance", MRP, "you saved", or reward points. When itemised, this is the total charged, not the sum of item prices if they differ.
+- amount: actual amount PAID/DEBITED in INR (positive number) — always the INR figure the account was charged. Never use "available balance", MRP, "you saved", or reward points. When itemised, this is the total charged, not the sum of item prices if they differ.
+- original_amount: when the purchase was priced in another currency, the amount in THAT currency. Null for ordinary INR purchases.
+- original_currency: the ISO code for it — "USD", "EUR", "AED". Null for INR.
 - platform: the app or marketplace the order went THROUGH, when there was one — Zomato, Swiggy, Amazon, Flipkart, Blinkit, Zepto, Instamart, Myntra, Uber, Rapido, BookMyShow, and so on. Null when the purchase was direct: in store, on the merchant's own site, or a bank transfer. The merchant stays the restaurant or seller that was actually paid; platform records who processed the order. A Zomato order from Nandhana Palace is merchant "Nandhana Palace", platform "Zomato".
 - merchant: the payee/store the user would recognise. Clean up noise: "UPI/SWIGGY/123456" → "Swiggy", "POS/AMAZON.IN" → "Amazon", VPA "zomato@upi" → "Zomato". Prefer the consumer brand over the legal entity — "Nandhana Palace", not "NANDHANA FOODS PRIVATE LIMITED". For person-to-person transfers (NEFT/IMPS/RTGS), use the recipient name.
 - category: one of — Food & Dining, Transport, Shopping, Entertainment, Health, Bills & Utilities, Education, Personal Care, Gifts & Donations, Others.
@@ -77,7 +79,8 @@ Respond with valid JSON only — no markdown fences, no explanation:
   "transactions": [
     {
       "amount": number,
-      "currency": "INR",
+      "original_amount": number | null,
+      "original_currency": string | null,
       "merchant": string,
       "platform": string | null,
       "category": string,
@@ -176,7 +179,6 @@ def validate_transaction(raw: dict, today_date: str, min_confidence: float = CON
         "payment_method": pm if pm in VALID_PAYMENT_METHODS else "Other",
         "confidence": confidence,
         "uncertain_fields": [str(f) for f in uncertain] if isinstance(uncertain, list) else [],
-        "currency": "INR",
     }
     for key in ("item_name", "notes", "subcategory"):
         val = raw.get(key)
@@ -189,6 +191,20 @@ def validate_transaction(raw: dict, today_date: str, min_confidence: float = CON
     platform = raw.get("platform")
     if isinstance(platform, str) and platform.strip():
         tx["tags"] = [platform.strip()]
+
+    # Foreign-currency purchases: the columns exist, so keep the original.
+    original = _num(raw.get("original_amount"))
+    if original is not None and original > 0:
+        tx["original_amount"] = original
+    orig_ccy = raw.get("original_currency")
+    if isinstance(orig_ccy, str) and orig_ccy.strip().upper() not in ("", "INR"):
+        tx["original_currency"] = orig_ccy.strip().upper()
+
+    # The model tells us which fields it was unsure about; dropping that left
+    # a shaky row looking identical to a certain one in the sheet.
+    if tx["uncertain_fields"]:
+        doubt = "AI unsure: " + ", ".join(tx["uncertain_fields"])
+        tx["notes"] = f"{tx['notes']} · {doubt}" if tx.get("notes") else doubt
 
     items = _clean_items(raw.get("items"))
     if items:

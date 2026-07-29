@@ -137,6 +137,47 @@ class TestValidationEverywhere:
         assert tx["subcategory"] == "Biryani"
 
 
+class TestFullColumnCoverage:
+    """Every field the prompt asks for must reach a column, or the model is
+    spending tokens on something that gets thrown away."""
+
+    def test_currency_is_no_longer_requested_or_emitted(self):
+        assert '"currency"' not in mod.SYSTEM_PROMPT
+        assert "currency" not in validate_transaction(_row(450), TODAY)
+
+    def test_foreign_currency_is_kept(self):
+        tx = validate_transaction(
+            _row(2150, "Amazon", original_amount=25.99, original_currency="usd"), TODAY)
+        assert tx["amount"] == 2150            # INR charged
+        assert tx["original_amount"] == 25.99
+        assert tx["original_currency"] == "USD"
+
+    def test_inr_adds_no_original_currency_noise(self):
+        tx = validate_transaction(_row(450, original_currency="INR"), TODAY)
+        assert "original_currency" not in tx
+
+    def test_uncertain_fields_are_surfaced_in_notes(self):
+        tx = validate_transaction(
+            _row(450, notes="Ref 99", uncertain_fields=["date", "merchant"]), TODAY)
+        assert tx["notes"] == "Ref 99 · AI unsure: date, merchant"
+
+    def test_uncertainty_alone_still_reaches_notes(self):
+        tx = validate_transaction(_row(450, notes=None, uncertain_fields=["date"]), TODAY)
+        assert tx["notes"] == "AI unsure: date"
+
+    def test_certain_rows_get_no_marker(self):
+        assert "unsure" not in validate_transaction(_row(450, notes="Ref 99"), TODAY)["notes"]
+
+    def test_every_prompt_field_maps_to_a_column_or_is_folded(self):
+        import re
+        from app.sheets.transaction_schema import COLS
+        block = mod.SYSTEM_PROMPT.split('"transactions": [')[1].split("]\n}")[0]
+        asked = {m for m in re.findall(r'^\s*"(\w+)":', block, re.M)}
+        # platform -> tags, items -> item_name/quantity/notes, the rest direct.
+        folded = {"platform", "items", "confidence", "uncertain_fields"}
+        assert asked - folded <= set(COLS)
+
+
 class TestPlatform:
     """The ordering app has to be recorded somewhere, or "how much did I spend
     on Zomato?" is unanswerable — the merchant column is the restaurant."""
