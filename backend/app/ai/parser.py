@@ -56,6 +56,7 @@ Extract ONLY debits — money leaving the user's account. Ignore credits, refund
 
 Field rules:
 - amount: actual amount PAID/DEBITED in INR (positive number). Never use "available balance", MRP, "you saved", or reward points. When itemised, this is the total charged, not the sum of item prices if they differ.
+- platform: the app or marketplace the order went THROUGH, when there was one — Zomato, Swiggy, Amazon, Flipkart, Blinkit, Zepto, Instamart, Myntra, Uber, Rapido, BookMyShow, and so on. Null when the purchase was direct: in store, on the merchant's own site, or a bank transfer. The merchant stays the restaurant or seller that was actually paid; platform records who processed the order. A Zomato order from Nandhana Palace is merchant "Nandhana Palace", platform "Zomato".
 - merchant: the payee/store the user would recognise. Clean up noise: "UPI/SWIGGY/123456" → "Swiggy", "POS/AMAZON.IN" → "Amazon", VPA "zomato@upi" → "Zomato". Prefer the consumer brand over the legal entity — "Nandhana Palace", not "NANDHANA FOODS PRIVATE LIMITED". For person-to-person transfers (NEFT/IMPS/RTGS), use the recipient name.
 - category: one of — Food & Dining, Transport, Shopping, Entertainment, Health, Bills & Utilities, Education, Personal Care, Gifts & Donations, Others.
 - subcategory: a more specific label when one is obvious, else null.
@@ -78,6 +79,7 @@ Respond with valid JSON only — no markdown fences, no explanation:
       "amount": number,
       "currency": "INR",
       "merchant": string,
+      "platform": string | null,
       "category": string,
       "subcategory": string | null,
       "payment_method": string,
@@ -180,6 +182,13 @@ def validate_transaction(raw: dict, today_date: str, min_confidence: float = CON
         val = raw.get(key)
         if isinstance(val, str) and val.strip():
             tx[key] = val.strip()
+
+    # The ordering app goes in tags: the merchant column has to stay the place
+    # that was actually paid, or dedup stops matching the same shop across
+    # sources — but without this there is no way to total spend per platform.
+    platform = raw.get("platform")
+    if isinstance(platform, str) and platform.strip():
+        tx["tags"] = [platform.strip()]
 
     items = _clean_items(raw.get("items"))
     if items:

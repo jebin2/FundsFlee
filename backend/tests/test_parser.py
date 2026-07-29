@@ -137,6 +137,35 @@ class TestValidationEverywhere:
         assert tx["subcategory"] == "Biryani"
 
 
+class TestPlatform:
+    """The ordering app has to be recorded somewhere, or "how much did I spend
+    on Zomato?" is unanswerable — the merchant column is the restaurant."""
+
+    def test_platform_becomes_a_tag(self):
+        tx = validate_transaction(_row(504.47, "Nandhana Palace", platform="Zomato"), TODAY)
+        assert tx["tags"] == ["Zomato"]
+        assert tx["merchant"] == "Nandhana Palace"   # merchant is still the payee
+
+    def test_no_platform_leaves_tags_unset(self):
+        assert "tags" not in validate_transaction(_row(450, "Local Cafe"), TODAY)
+
+    def test_null_platform_is_ignored(self):
+        assert "tags" not in validate_transaction(_row(450, platform=None), TODAY)
+
+    def test_blank_platform_is_ignored(self):
+        assert "tags" not in validate_transaction(_row(450, platform="   "), TODAY)
+
+    def test_platform_is_trimmed(self):
+        assert validate_transaction(_row(450, platform="  Swiggy "), TODAY)["tags"] == ["Swiggy"]
+
+    def test_platform_reaches_the_row(self):
+        from app.sheets.transaction_schema import idx, transaction_to_row
+        tx = validate_transaction(_row(450, platform="Zomato"), TODAY)
+        row = transaction_to_row({**tx, "id": "x", "source": "email",
+                                  "created_at": "t", "updated_at": "t"})
+        assert row[idx("tags")] == "Zomato"
+
+
 class TestItems:
     ORDER = [{"name": "High Protein - Supreme Boneless Chicken Biryani", "qty": 1},
              {"name": "Andhra Pappula Podi - 200Gms", "qty": 1}]

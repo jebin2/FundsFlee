@@ -140,18 +140,26 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             # component invoices); a forwarded alert is its own group, so a mail
             # carrying ten of them yields ten transactions, not one.
             groups = group_units(units)
-            transactions = []
+            # (transaction, origin subject, origin from). Each forwarded alert
+            # came from a different message; stamping every row with the outer
+            # forward's headers loses which one it actually was.
+            parsed_rows: list[tuple[dict, str, str]] = []
             skip_reasons = []
             for i, group in enumerate(groups, 1):
                 if len(groups) > 1:
                     log.info("email", f"group {i}/{len(groups)}",
                              {"messageId": msg_id, "units": len(group)})
                 parsed = await parse_units(group, config["region"], today)
+                origin = next((u for u in group if u["kind"] == "email"), None)
+                origin_subject = (origin or {}).get("subject") or subject
+                origin_from = (origin or {}).get("from") or from_
                 for tx in parsed["transactions"]:
                     fold_items(tx)  # emails name dishes but rarely price them
-                transactions.extend(parsed["transactions"])
+                    parsed_rows.append((tx, origin_subject, origin_from))
                 if parsed["skipReason"]:
                     skip_reasons.append(parsed["skipReason"])
+
+            transactions = [tx for tx, _, _ in parsed_rows]
             skip_reason = skip_reasons[0] if skip_reasons and not transactions else None
 
             if not transactions:
@@ -175,7 +183,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             now = now_iso()
             msg_tx_ids: list[str] = []
             rows_to_write: list[dict] = []
-            for transaction in transactions:
+            for transaction, origin_subject, origin_from in parsed_rows:
                 tx = {
                     "id": str(uuid.uuid4()),
                     "date": transaction["date"],
@@ -186,8 +194,9 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     "item_name": transaction.get("item_name"),
                     "payment_method": transaction["payment_method"],
                     "notes": transaction.get("notes"),
+                    "tags": transaction.get("tags"),
                     "source": "email",
-                    "raw_input": f"{subject} | {from_}"[:500],
+                    "raw_input": f"{origin_subject} | {origin_from}"[:500],
                     "created_at": now,
                     "updated_at": now,
                     "status": "done",
