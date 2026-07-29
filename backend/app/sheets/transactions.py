@@ -1,9 +1,15 @@
 """Transactions tab — port of src/lib/sheets/transactions.ts."""
 import asyncio
+import re
 from typing import TypedDict
 
+from googleapiclient.errors import HttpError
+
 from app.sheets.client import get_sheets_client, with_sheets_retry
-from app.sheets.migrations import ensure_transaction_schema_sync
+from app.sheets.migrations import (
+    ensure_date_column_format_sync,
+    ensure_transaction_schema_sync,
+)
 from app.sheets.transaction_schema import (
     COLS,
     ID_RANGE,
@@ -68,17 +74,52 @@ def _get_row_counts(sheets, sheet_id: str) -> tuple[int, int]:
     return physical, visible
 
 
+_ROW_SPAN_RE = re.compile(r"![A-Z]+(\d+):[A-Z]+(\d+)$")
+
+
+def _row_span(updated_range: str) -> tuple[int, int] | None:
+    m = _ROW_SPAN_RE.search(updated_range or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _convert_date_cells(sheets, sheet_id: str, first_row: int, txs: list[dict]) -> None:
+    """Re-write just the date column so Sheets stores real dates.
+
+    The row itself is written RAW, because USER_ENTERED applies to every cell:
+    it would evaluate a merchant like "=Zomato" as a formula and reformat the
+    ISO timestamps in created_at/updated_at. Only column B is reinterpreted.
+    """
+    col = letter("date")
+    values = [[tx.get("date") or ""] for tx in txs]
+    sheets.spreadsheets().values().update(
+        spreadsheetId=sheet_id,
+        range=f"transactions!{col}{first_row}:{col}{first_row + len(txs) - 1}",
+        valueInputOption="USER_ENTERED",
+        body={"values": values},
+    ).execute()
+
+
 def _append_transactions_sync(access_token: str, sheet_id: str, txs: list[dict]) -> None:
     if not txs:
         return
     sheets = get_sheets_client(access_token)
     ensure_transaction_schema_sync(sheets, sheet_id)
-    with_sheets_retry(lambda: sheets.spreadsheets().values().append(
+    ensure_date_column_format_sync(sheets, sheet_id)
+
+    res = with_sheets_retry(lambda: sheets.spreadsheets().values().append(
         spreadsheetId=sheet_id,
         range="transactions!A2",
         valueInputOption="RAW",
         body={"values": [transaction_to_row(tx) for tx in txs]},
     ).execute())
+
+    span = _row_span(((res or {}).get("updates") or {}).get("updatedRange") or "")
+    if span:
+        try:
+            _convert_date_cells(sheets, sheet_id, span[0], txs)
+        except HttpError:
+            pass  # rows are already written; dates just stay text
+
     # New rows are not in the cache — force rebuild on next update call.
     invalidate_row_index(sheet_id)
 
@@ -172,10 +213,22 @@ def _update_transaction_field_sync(
 
     batch_data = transaction_update_to_cells(updates, row_number)
     if batch_data:
-        with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
-            spreadsheetId=sheet_id,
-            body={"valueInputOption": "RAW", "data": batch_data},
-        ).execute())
+        # Same split as the append path: everything RAW, the date cell alone
+        # USER_ENTERED so an edit does not turn it back into text.
+        date_prefix = f"transactions!{letter('date')}"
+        date_cells = [c for c in batch_data if c["range"].startswith(date_prefix)]
+        other_cells = [c for c in batch_data if not c["range"].startswith(date_prefix)]
+
+        if other_cells:
+            with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"valueInputOption": "RAW", "data": other_cells},
+            ).execute())
+        if date_cells:
+            with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"valueInputOption": "USER_ENTERED", "data": date_cells},
+            ).execute())
         # Soft deletes change the logical row set — invalidate so next update re-fetches
         if updates.get("deleted"):
             invalidate_row_index(sheet_id)

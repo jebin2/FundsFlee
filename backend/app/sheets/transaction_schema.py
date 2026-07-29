@@ -8,6 +8,7 @@ interface — optional fields are OMITTED (not None) so JSON responses stay
 byte-identical to the Next.js app.
 """
 import re
+from datetime import date, timedelta
 from typing import Any
 
 from app.core.dates import now_iso
@@ -84,6 +85,28 @@ def _num(v: float) -> Any:
     return int(v) if isinstance(v, float) and v.is_integer() else v
 
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Sheets counts days from 1899-12-30.
+_SHEETS_EPOCH = date(1899, 12, 30)
+
+
+def _iso_date(v: Any) -> Any:
+    """Normalise the date cell back to YYYY-MM-DD.
+
+    The column is stored as a real date and formatted yyyy-mm-dd, so the read
+    already matches and passes straight through. A bare serial number means the
+    format did not stick — convert rather than hand the app a number it would
+    silently compare as a string. Anything else is returned untouched: guessing
+    between 07/08 and 08/07 could corrupt a date, and leaving it alone fails
+    visibly instead.
+    """
+    if isinstance(v, str) and _ISO_DATE_RE.match(v):
+        return v
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return (_SHEETS_EPOCH + timedelta(days=int(v))).isoformat()
+    return v
+
+
 def transaction_to_row(tx: dict) -> list:
     return [
         tx["id"], tx["date"], tx["time"], tx["amount"],
@@ -132,7 +155,7 @@ def row_to_transaction(r: list) -> dict:
 
     tx: dict = {
         "id":             raw("id"),
-        "date":           nullish("date"),
+        "date":           _iso_date(nullish("date")),
         "time":           nullish("time"),
         "amount":         _num(_parse_float(raw("amount"))),
         "merchant":       nullish("merchant"),

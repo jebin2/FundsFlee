@@ -177,3 +177,30 @@ class TestHeadersIntegrity:
         assert tuple(COLS) == EXPECTED_HEADERS
         for i, name in enumerate(EXPECTED_HEADERS):
             assert COLS[name][0] == i
+
+
+class TestDateNormalisation:
+    """The date column is stored as a real date; the read must still hand the
+    app YYYY-MM-DD, because every comparison in the app is a string compare."""
+
+    def test_iso_passes_through_untouched(self):
+        assert row_to_transaction(transaction_to_row(BASE_TX))["date"] == BASE_TX["date"]
+
+    def test_a_serial_number_is_converted(self):
+        # If the column format failed to apply, Sheets hands back a day count.
+        from datetime import date as _date
+        serial = (_date(2026, 8, 1) - _date(1899, 12, 30)).days
+        row = transaction_to_row(BASE_TX)
+        row[idx("date")] = serial
+        assert row_to_transaction(row)["date"] == "2026-08-01"
+
+    def test_an_unrecognised_shape_is_left_alone(self):
+        # Guessing between 07/08 and 08/07 could silently corrupt a date.
+        row = transaction_to_row(BASE_TX)
+        row[idx("date")] = "01/08/2026"
+        assert row_to_transaction(row)["date"] == "01/08/2026"
+
+    def test_empty_stays_empty(self):
+        row = transaction_to_row(BASE_TX)
+        row[idx("date")] = ""
+        assert row_to_transaction(row)["date"] == ""

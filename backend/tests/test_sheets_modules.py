@@ -25,6 +25,7 @@ class FakeSheets:
         self.calls: list[tuple] = []
         self.get_responses: dict[str, list] = {}      # range -> values
         self.batch_get_response: list[list] = []      # COLUMNS-major values per range
+        self.append_response: dict = {"updates": {"updatedRange": "transactions!A2:AA2"}}
 
     def spreadsheets(self):
         return self
@@ -45,7 +46,7 @@ class FakeSheets:
 
     def append(self, spreadsheetId=None, range=None, body=None, **kw):
         self.calls.append(("append", range, body))
-        return FakeRequest(lambda: {})
+        return FakeRequest(lambda: self.append_response)
 
     def update(self, spreadsheetId=None, range=None, body=None, **kw):
         self.calls.append(("update", range, body))
@@ -63,6 +64,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(meta_mod, "get_sheets_client", lambda token: fake)
     # ensure_transaction_schema memo: mark the test sheet as already checked
     monkeypatch.setattr(transactions_mod, "ensure_transaction_schema_sync", lambda s, sid: None)
+    monkeypatch.setattr(transactions_mod, "ensure_date_column_format_sync", lambda s, sid: None)
     transactions_mod._row_index_cache.clear()
     return fake
 
@@ -149,6 +151,56 @@ class TestUpdateTransactionField:
     def test_appending_nothing_makes_no_request(self, fake):
         asyncio.run(transactions_mod.append_transactions("tok", "sheet", []))
         assert [c for c in fake.calls if c[0] == "append"] == []
+
+
+class TestDateCells:
+    """Only the date column may be reinterpreted by Sheets. USER_ENTERED on a
+    whole row would evaluate a merchant like "=Zomato" and reformat the ISO
+    timestamps in created_at/updated_at."""
+
+    def test_row_is_written_raw(self, fake):
+        asyncio.run(transactions_mod.append_transactions("tok", "sheet", [dict(BASE_TX)]))
+        append = next(c for c in fake.calls if c[0] == "append")
+        assert append[2] is not None
+        # the append itself never uses USER_ENTERED
+        assert "USER_ENTERED" not in str(append)
+
+    def test_only_the_date_column_is_converted(self, fake):
+        fake.append_response = {"updates": {"updatedRange": "transactions!A5:AA6"}}
+        txs = [dict(BASE_TX, id="a", date="2026-07-29"), dict(BASE_TX, id="b", date="2026-07-30")]
+        asyncio.run(transactions_mod.append_transactions("tok", "sheet", txs))
+
+        update = next(c for c in fake.calls if c[0] == "update" and c[1].startswith("transactions!B"))
+        assert update[1] == "transactions!B5:B6"
+        assert update[2]["values"] == [["2026-07-29"], ["2026-07-30"]]
+
+    def test_no_conversion_when_the_range_is_unknown(self, fake):
+        fake.append_response = {}
+        asyncio.run(transactions_mod.append_transactions("tok", "sheet", [dict(BASE_TX)]))
+        assert [c for c in fake.calls if c[0] == "update" and c[1].startswith("transactions!B")] == []
+
+    def test_editing_a_date_keeps_it_a_date(self, fake):
+        transactions_mod._row_index_cache["sheet"] = {"t1": 7}
+        asyncio.run(transactions_mod.update_transaction_field(
+            "tok", "sheet", "t1", {"date": "2026-08-01", "merchant": "Swiggy"}))
+
+        batches = [c for c in fake.calls if c[0] == "batchUpdate"]
+        modes = {b[1]["valueInputOption"] for b in batches}
+        assert modes == {"RAW", "USER_ENTERED"}
+
+        entered = next(b for b in batches if b[1]["valueInputOption"] == "USER_ENTERED")
+        assert [d["range"] for d in entered[1]["data"]] == ["transactions!B7"]
+
+        raw = next(b for b in batches if b[1]["valueInputOption"] == "RAW")
+        assert all(not d["range"].startswith("transactions!B") for d in raw[1]["data"])
+
+    def test_an_edit_without_a_date_stays_a_single_raw_write(self, fake):
+        transactions_mod._row_index_cache["sheet"] = {"t1": 7}
+        asyncio.run(transactions_mod.update_transaction_field(
+            "tok", "sheet", "t1", {"merchant": "Swiggy"}))
+        batches = [c for c in fake.calls if c[0] == "batchUpdate"]
+        assert len(batches) == 1
+        assert batches[0][1]["valueInputOption"] == "RAW"
 
 
 class TestMeta:
