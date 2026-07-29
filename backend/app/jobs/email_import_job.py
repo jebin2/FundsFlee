@@ -13,7 +13,7 @@ from app.email_import.mime_text_extractor import extract_payload_text
 from app.extract.html_text import extract_email_text
 from app.extract.pipeline import collect_message_units, group_units
 from app.services.expand_items import rows_from_parsed
-from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
+from app.services.duplicate_scan import deduplicate_new_transactions
 from app.sheets import (
     append_transactions,
     get_processed_email_ids,

@@ -16,7 +16,8 @@ from app.sheets import (
     get_meta_values,
     update_transaction_field,
 )
-from app.services.expand_items import finish_placeholder, priced_items, rows_from_parsed
+from app.services.duplicate_scan import deduplicate_new_transactions
+from app.services.expand_items import finish_placeholder, rows_from_parsed
 
 VALID_RECEIPT_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 
@@ -60,7 +61,7 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
         buffer, mime_type = downloaded["buffer"], downloaded["mimeType"]
 
         log.info("receipt", "running AI parse", {"txId": tx_id, "mimeType": mime_type})
-        parsed = await parse_receipt_image(
+        result = await parse_receipt_image(
             base64.b64encode(buffer).decode(),
             _to_receipt_mime_type(mime_type),
             request.get("region"),
@@ -69,46 +70,56 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
 
         fallback = request.get("fallback")
         if fallback:
-            if not parsed.get("merchant"):
-                parsed["merchant"] = fallback.get("merchant") or parsed.get("merchant")
-            if not parsed.get("payment_method"):
-                parsed["payment_method"] = fallback.get("payment_method") or parsed.get("payment_method")
+            for parsed in result["transactions"]:
+                if not parsed.get("merchant"):
+                    parsed["merchant"] = fallback.get("merchant")
+                if not parsed.get("payment_method"):
+                    parsed["payment_method"] = fallback.get("payment_method")
 
         receipt_id = request.get("receiptGroupId") or tx_id
         now = now_iso()
-        items = priced_items(parsed.get("items"))
-        # Bank-reported amount is ground truth; OCR may miss items when confidence is low
-        total_amount = placeholder["amount"] if placeholder.get("amount") is not None else parsed.get("amount")
+        parsed_rows = result["transactions"]
 
         log.info("receipt", "AI parsed",
-                 {"txId": tx_id, "merchant": parsed.get("merchant"), "amount": parsed.get("amount"),
-                  "itemCount": len(items)})
+                 {"txId": tx_id, "docType": result["docType"], "parsed": len(parsed_rows)})
 
-        rows = rows_from_parsed({
-            "date": parsed.get("date"),
-            "time": parsed.get("time"),
-            "merchant": parsed.get("merchant"),
-            "category": parsed.get("category"),
-            "subcategory": parsed.get("subcategory"),
-            "payment_method": parsed.get("payment_method"),
-            "notes": parsed.get("notes"),
-            "tags": parsed.get("tags"),
-            "source": "receipt",
-            "receipt_url": placeholder["receipt_url"],
-            "receipt_id": receipt_id,
-        }, parsed, now, total_amount)
+        # A photographed statement page really can hold several payments.
+        rows = []
+        for parsed in parsed_rows:
+            # Bank-reported amount is ground truth, but only when the photo
+            # resolved to the single payment the placeholder was created for.
+            total_amount = (placeholder["amount"]
+                            if len(parsed_rows) == 1 and placeholder.get("amount") is not None
+                            else parsed.get("amount"))
+            rows.extend(rows_from_parsed({
+                "date": parsed.get("date"),
+                "time": parsed.get("time"),
+                "merchant": parsed.get("merchant"),
+                "category": parsed.get("category"),
+                "subcategory": parsed.get("subcategory"),
+                "original_amount": parsed.get("original_amount"),
+                "original_currency": parsed.get("original_currency"),
+                "payment_method": parsed.get("payment_method"),
+                "notes": parsed.get("notes"),
+                "tags": parsed.get("tags"),
+                "source": "receipt",
+                "receipt_url": placeholder["receipt_url"],
+                "receipt_id": receipt_id,
+            }, parsed, now, total_amount))
+
         written = await finish_placeholder(session, tx_id, rows, now)
+        await deduplicate_new_transactions(session, written)
+        first = parsed_rows[0] if parsed_rows else {}
 
         try:
             meta = await get_meta_values(session.access_token, session.sheet_id)
         except Exception:
             meta = {}
         if meta.get("push_subscription"):
-            total = total_amount
-            item_n = written
+            item_n = len(written)
             payload = {
-                "title": f"{parsed.get('merchant') or 'Receipt'} processed",
-                "body": f"{item_n} item{'s' if item_n != 1 else ''} · ₹{to_locale_inr(_round(total))}",
+                "title": f"{first.get('merchant') or 'Receipt'} processed",
+                "body": f"{item_n} row{'s' if item_n != 1 else ''} · ₹{to_locale_inr(_round(first.get('amount') or 0))}",
                 "tag": "receipt-done",
                 "url": "/transactions",
             }
@@ -122,9 +133,8 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
             asyncio.create_task(_push())
 
         log.info("receipt", "done",
-                 {"txId": tx_id, "merchant": parsed.get("merchant"), "amount": parsed.get("amount"),
-                  "rows": written})
-        return {"ok": True, "txId": receipt_id, "itemCount": written}
+                 {"txId": tx_id, "merchant": first.get("merchant"), "rows": len(written)})
+        return {"ok": True, "txId": receipt_id, "itemCount": len(written)}
     except Exception as err:
         log.error("receipt", "failed", err, {"txId": tx_id})
         try:

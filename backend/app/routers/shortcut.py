@@ -50,28 +50,30 @@ async def shortcut(request: Request) -> dict:
     if not access_token:
         raise HTTPException(status_code=401, detail="Could not authenticate — please reinstall the shortcut from the app.")
 
-    parsed = await parse_transaction_text(text, payload.get("region") or "", today_iso())
+    result = await parse_transaction_text(text, payload.get("region") or "", today_iso())
 
     now = now_iso()
-    base = {
-        "date": parsed.get("date"),
-        "time": parsed.get("time"),
-        "merchant": parsed.get("merchant"),
-        "category": parsed.get("category"),
-        "subcategory": parsed.get("subcategory"),
-        "payment_method": parsed.get("payment_method"),
-        "notes": parsed.get("notes"),
-        "tags": parsed.get("tags"),
-        "source": source,
-        "raw_input": text,
-    }
-
-    rows = rows_from_parsed(base, parsed, now, parsed.get("amount"))
+    rows = []
+    for parsed in result["transactions"]:
+        rows.extend(rows_from_parsed({
+            "date": parsed.get("date"),
+            "time": parsed.get("time"),
+            "merchant": parsed.get("merchant"),
+            "category": parsed.get("category"),
+            "subcategory": parsed.get("subcategory"),
+            "original_amount": parsed.get("original_amount"),
+            "original_currency": parsed.get("original_currency"),
+            "payment_method": parsed.get("payment_method"),
+            "notes": parsed.get("notes"),
+            "tags": parsed.get("tags"),
+            "source": source,
+            "raw_input": text,
+        }, parsed, now))
 
     await append_transactions(access_token, payload["sheetId"], rows)
     # Installed shortcuts read a single object here, so an itemised bill
     # reports its first row rather than changing the response shape.
-    tx = rows[0]
+    tx = rows[0] if rows else {}
 
     await set_meta_value(access_token, payload["sheetId"], "shortcut_last_used", now_iso())
 

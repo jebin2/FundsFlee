@@ -159,7 +159,7 @@ async def finish_placeholder(
     placeholder_id: str,
     rows: list[dict],
     now: str,
-) -> int:
+) -> list[str]:
     """Complete a queued placeholder with the rows a parse produced.
 
     One row fills the placeholder in place: the queued row becomes the
@@ -170,11 +170,14 @@ async def finish_placeholder(
     The statement job used to append even for a single row, so an uploaded
     one-line PDF left a dead placeholder behind while the same thing from a
     photo did not.
+
+    Returns the ids of the transactions now in the sheet, so the caller can
+    hand them to the duplicate scan.
     """
     if not rows:
         await update_transaction_field(
             session.access_token, session.sheet_id, placeholder_id, {"status": "failed"})
-        return 0
+        return []
 
     if len(rows) == 1:
         fields = {k: v for k, v in rows[0].items() if k not in ("id", "created_at")}
@@ -182,11 +185,11 @@ async def finish_placeholder(
         fields["updated_at"] = now
         await update_transaction_field(
             session.access_token, session.sheet_id, placeholder_id, fields)
-        return 1
+        return [placeholder_id]
 
     log.info("rows", "expanded to item rows", {"placeholderId": placeholder_id, "rows": len(rows)})
     await append_transactions(session.access_token, session.sheet_id, rows)
     await update_transaction_field(
         session.access_token, session.sheet_id, placeholder_id,
         {"deleted": True, "status": "done"})
-    return len(rows)
+    return [r["id"] for r in rows]

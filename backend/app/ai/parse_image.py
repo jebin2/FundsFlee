@@ -13,7 +13,11 @@ async def parse_receipt_image(
     user_region: str | None = None,
     today_date: str | None = None,
 ) -> dict:
-    result = await parse_units(
+    """Returns the full parse result. Callers that can only show one row take
+    transactions[0] themselves — the adapters used to do that silently, so a
+    pasted or photographed statement imported its first line and dropped the
+    rest."""
+    return await parse_units(
         [image_unit(image_base64, media_type)],
         user_region or "",
         today_date or today_iso(),
@@ -21,5 +25,3 @@ async def parse_receipt_image(
         min_confidence=NO_FLOOR,
         apply_cheap_guards=False,
     )
-    rows = result["transactions"]
-    return rows[0] if rows else {}

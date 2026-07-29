@@ -99,6 +99,31 @@ class TestEveryWriterSharesTheRule:
         missing = [w for w in self.WRITERS if "rows_from_parsed" not in (root / w).read_text()]
         assert missing == [], f"writers not using the shared builder: {missing}"
 
+    def test_every_import_path_runs_the_duplicate_scan(self):
+        # An uploaded PDF can duplicate a purchase already imported from its
+        # confirmation email. Before this, only the email path ever checked.
+        import pathlib as _p
+        root = _p.Path(__file__).resolve().parents[1]
+        importers = [
+            "app/services/receipt_processing_service.py",
+            "app/jobs/statement_parse_job.py",
+            "app/jobs/email_import_job.py",
+            "app/jobs/text_parse_job.py",
+        ]
+        missing = [w for w in importers
+                   if "deduplicate_new_transactions" not in (root / w).read_text()]
+        assert missing == [], f"import paths not scanning for duplicates: {missing}"
+
+    def test_adapters_do_not_drop_rows(self):
+        # parse_transaction_text / parse_receipt_image used to return
+        # transactions[0], so a pasted or photographed statement imported its
+        # first line and silently lost the rest.
+        import pathlib as _p
+        root = _p.Path(__file__).resolve().parents[1]
+        for adapter in ("app/ai/parse_text.py", "app/ai/parse_image.py"):
+            src = (root / adapter).read_text()
+            assert "rows[0] if rows else {}" not in src, adapter
+
     def test_none_of_them_expand_unfiltered(self):
         import pathlib as _p
         root = _p.Path(__file__).resolve().parents[1]

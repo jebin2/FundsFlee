@@ -11,8 +11,13 @@ async def parse_transaction_text(
     user_region: str | None = None,
     today_date: str | None = None,
 ) -> dict:
-    """Returns one extracted transaction dict (empty dict when nothing found)."""
-    result = await parse_units(
+    """Returns the full parse result: {transactions, docType, skipReason}.
+
+    Callers that can only present one row take transactions[0] themselves.
+    This used to return just the first row, so pasting a statement imported
+    its first line and silently dropped the rest.
+    """
+    return await parse_units(
         [text_unit(text)],
         user_region or "",
         today_date or today_iso(),
@@ -21,5 +26,3 @@ async def parse_transaction_text(
         min_confidence=NO_FLOOR,
         apply_cheap_guards=False,
     )
-    rows = result["transactions"]
-    return rows[0] if rows else {}

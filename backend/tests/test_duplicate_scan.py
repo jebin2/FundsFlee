@@ -1,4 +1,4 @@
-"""Post-import duplicate check — candidates scoped by date, not by recency.
+"""Duplicate scan — candidates scoped by date, not by recency.
 
 The recency-based version broke on emailed statements: a hundred new rows
 flooded the recent-200 window and pushed out the originals they duplicated.
@@ -6,8 +6,8 @@ flooded the recent-200 window and pushed out the originals they duplicated.
 import asyncio
 from types import SimpleNamespace
 
-from app.email_import import post_import_duplicate_check as mod
-from app.email_import.post_import_duplicate_check import (
+import app.services.duplicate_scan as mod
+from app.services.duplicate_scan import (
     DEDUP_WINDOW_DAYS,
     deduplicate_new_transactions,
 )

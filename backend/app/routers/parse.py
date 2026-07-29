@@ -27,7 +27,9 @@ async def parse_text(request: Request, _session: SheetSession = Depends(require_
     text = body.get("text")
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
-    extracted = await parse_transaction_text(text, body.get("region"), today_iso())
+    result = await parse_transaction_text(text, body.get("region"), today_iso())
+    # The add form edits one transaction, so the first row is what it can show.
+    extracted = (result["transactions"] or [{}])[0]
     return {"extracted": extracted, "confidence": extracted.get("confidence")}
 
 
@@ -41,7 +43,8 @@ async def parse_image(request: Request, _session: SheetSession = Depends(require
     if image.content_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP supported")
     b64 = base64.b64encode(await image.read()).decode()
-    extracted = await parse_receipt_image(b64, image.content_type, region or None, today_iso())
+    result = await parse_receipt_image(b64, image.content_type, region or None, today_iso())
+    extracted = (result["transactions"] or [{}])[0]
     return {"extracted": extracted, "confidence": extracted.get("confidence")}
 
 

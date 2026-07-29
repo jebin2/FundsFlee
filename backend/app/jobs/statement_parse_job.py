@@ -8,6 +8,7 @@ import re
 
 from app.ai.parser import NO_FLOOR, parse_units
 from app.core.dates import today_iso, now_iso
+from app.services.duplicate_scan import deduplicate_new_transactions
 from app.services.expand_items import finish_placeholder, rows_from_parsed
 from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession
@@ -70,8 +71,11 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
             }, row, now))
 
         written = await finish_placeholder(session, placeholder_id, rows_to_write, now)
+        # An uploaded PDF can duplicate a purchase already imported from its
+        # confirmation email — the exact pair that slipped through before.
+        await deduplicate_new_transactions(session, written)
 
-        log.info("statement-parse", "done", {"placeholderId": placeholder_id, "rows": written})
+        log.info("statement-parse", "done", {"placeholderId": placeholder_id, "rows": len(written)})
     except Exception as err:
         log.error("statement-parse", "failed", err, {"placeholderId": placeholder_id})
         try:

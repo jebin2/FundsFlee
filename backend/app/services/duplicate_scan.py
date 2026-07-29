@@ -1,6 +1,10 @@
-"""Post-import duplicate check — port of src/server/email-import/postImportDuplicateCheck.ts.
+"""Duplicate scan run after an import writes rows.
 
-The port compared against the most recent 200 rows. That works when an import
+Not email-specific: an uploaded PDF can duplicate a purchase already imported
+from its confirmation email, which is exactly what happened before every import
+path called this.
+
+The original compared against the most recent 200 rows. That works when an import
 adds a handful, but an emailed statement can add a hundred rows spanning months:
 they flood the recent-200 window and push out the very originals they duplicate.
 
