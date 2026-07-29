@@ -4,7 +4,13 @@ from email.message import EmailMessage
 
 import pymupdf
 
-from app.extract.pipeline import MAX_DEPTH, MAX_UNITS, collect_units
+from app.extract.pipeline import (
+    MAX_DEPTH,
+    MAX_UNITS,
+    collect_message_units,
+    collect_units,
+    group_units,
+)
 
 
 def _run(data, mime, source=""):
@@ -103,6 +109,67 @@ class TestCaps:
         units = _run(b"x" * (21 * 1024 * 1024), "application/pdf", "huge.pdf")
         assert _kinds(units) == ["error"]
         assert "20MB" in units[0]["reason"]
+
+
+class TestGrouping:
+    """A group is one payment. Getting this wrong loses money silently: ten
+    forwarded alerts in one group collapse to a single transaction."""
+
+    def _body(self):
+        return {"kind": "email", "text": "See attached.", "from": "me@example.com",
+                "subject": "Zomato order bills", "date": None, "source": "fwd"}
+
+    def _att(self, msg, name):
+        return {"data": msg.as_bytes(), "mime_type": "message/rfc822", "filename": name}
+
+    def test_each_forwarded_alert_gets_its_own_group(self):
+        atts = [self._att(_mail(f"Rs {100 + i}.00 debited for MERCHANT{i}."), f"a{i}.eml")
+                for i in range(10)]
+        units = asyncio.run(collect_message_units(self._body(), atts, "fwd"))
+        groups = group_units(units)
+        # 1 outer body + 10 forwarded alerts, never merged into one.
+        assert len(groups) == 11
+        assert all(len(g) == 1 for g in groups)
+
+    def test_a_forwarded_mails_own_documents_join_its_group(self):
+        # The Zomato shape, nested: one order + its component invoices must stay
+        # together so they merge into a single payment.
+        inner = _mail("Your order total is Rs 426.11")
+        for n in ("Order_ID.pdf", "Order_Invoice.pdf", "User_Charge.pdf"):
+            inner.add_attachment(_digital_pdf(), maintype="application", subtype="pdf", filename=n)
+        units = asyncio.run(collect_message_units(self._body(), [self._att(inner, "z.eml")], "fwd"))
+        groups = group_units(units)
+
+        assert len(groups) == 2                      # outer body, then the order
+        assert _kinds(groups[0]) == ["email"]
+        assert _kinds(groups[1]) == ["email", "document", "document", "document"]
+
+    def test_directly_attached_documents_merge_with_the_body(self):
+        atts = [{"data": _digital_pdf(), "mime_type": "application/pdf", "filename": "stmt.pdf"}]
+        units = asyncio.run(collect_message_units(self._body(), atts, "msg"))
+        assert len(group_units(units)) == 1
+        assert _kinds(units) == ["email", "document"]
+
+    def test_two_forwarded_mails_each_with_a_pdf(self):
+        mails = []
+        for i in range(2):
+            m = _mail(f"Alert {i}")
+            m.add_attachment(_digital_pdf(), maintype="application", subtype="pdf",
+                             filename=f"s{i}.pdf")
+            mails.append(self._att(m, f"m{i}.eml"))
+        groups = group_units(asyncio.run(collect_message_units(self._body(), mails, "fwd")))
+        assert [_kinds(g) for g in groups] == [
+            ["email"], ["email", "document"], ["email", "document"],
+        ]
+
+    def test_standalone_eml_is_a_single_group(self):
+        units = _run(_mail().as_bytes(), "message/rfc822")
+        assert len(group_units(units)) == 1
+
+    def test_every_unit_carries_a_group(self):
+        atts = [self._att(_mail("one"), "a.eml")]
+        units = asyncio.run(collect_message_units(self._body(), atts, "fwd"))
+        assert all("group" in u for u in units)
 
 
 class TestErrorUnits:

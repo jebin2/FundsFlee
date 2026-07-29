@@ -12,7 +12,7 @@ from app.email_import.attachments import fetch_attachments
 from app.email_import.config import read_email_import_config
 from app.email_import.gmail_query import build_gmail_query
 from app.email_import.mime_text_extractor import extract_payload_text
-from app.extract.pipeline import collect_units
+from app.extract.pipeline import collect_message_units, group_units
 from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
 from app.sheets import (
     append_transaction,
@@ -129,14 +129,26 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     log.error("email", "attachment fetch failed", err, {"messageId": msg_id})
 
             if attachments:
-                units = [{"kind": "email", "text": body_text, "from": from_,
-                          "subject": subject, "date": None, "source": subject}]
-                for att in attachments:
-                    units.extend(await collect_units(
-                        att["data"], att["mime_type"], att["filename"] or subject))
-                bundle = await parse_email_bundle(units, config["region"], today)
-                transactions = bundle["transactions"]
-                skip_reason = bundle["skipReason"]
+                units = await collect_message_units(
+                    {"kind": "email", "text": body_text, "from": from_,
+                     "subject": subject, "date": None, "source": subject},
+                    attachments, subject,
+                )
+                # One AI call per group. A group is one payment (an order plus
+                # its component invoices); a forwarded alert is its own group,
+                # so a mail carrying ten of them yields ten transactions rather
+                # than collapsing to one.
+                groups = group_units(units)
+                transactions = []
+                skip_reasons = []
+                for i, group in enumerate(groups, 1):
+                    log.info("email", f"parsing group {i}/{len(groups)}",
+                             {"messageId": msg_id, "units": len(group)})
+                    bundle = await parse_email_bundle(group, config["region"], today)
+                    transactions.extend(bundle["transactions"])
+                    if bundle["skipReason"]:
+                        skip_reasons.append(bundle["skipReason"])
+                skip_reason = skip_reasons[0] if skip_reasons and not transactions else None
             else:
                 parsed = await parse_email_transaction(body_text, from_, subject, config["region"], today)
                 transactions = [parsed["transaction"]] if parsed["transaction"] else []

@@ -18,9 +18,10 @@ SUPPORTED_MIMES = (
     "image/webp",
 )
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-# A bank alert has one statement attached; a marketing mail can have a dozen
-# tracking images. Past this many, the message is not what we are looking for.
-MAX_ATTACHMENTS_PER_MESSAGE = 5
+# A mail forwarding a batch of alerts can legitimately carry a few dozen .eml
+# parts, so this cannot be small. Each one costs an AI call downstream, which is
+# what actually bounds the work — see MAX_UNITS in extract.pipeline.
+MAX_ATTACHMENTS_PER_MESSAGE = 30
 
 
 def _base_mime(mime_type: str) -> str:

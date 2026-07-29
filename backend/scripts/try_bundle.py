@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.ai.parse_bundle import parse_email_bundle  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.core.dates import today_iso  # noqa: E402
-from app.extract.pipeline import collect_units  # noqa: E402
+from app.extract.pipeline import collect_units, group_units  # noqa: E402
 
 MIME_BY_SUFFIX = {".eml": "message/rfc822", ".pdf": "application/pdf"}
 
@@ -75,14 +75,22 @@ async def main() -> int:
         print("\n(--extract-only: no AI call made)")
         return 0
 
+    # One call per group, exactly as the import job does — a forwarded alert is
+    # its own payment and must not be merged with the others.
+    groups = group_units(units)
+    print(f"groups   : {len(groups)}  (one AI call each)")
     print("-" * 72)
-    result = await parse_email_bundle(units, args.region, today_iso())
+
+    rows = []
+    for i, group in enumerate(groups, 1):
+        result = await parse_email_bundle(group, args.region, today_iso())
+        print(f"[group {i}/{len(groups)}] docType={result['docType']} "
+              f"skipReason={result['skipReason']} rows={len(result['transactions'])}")
+        rows.extend(result["transactions"])
 
     print("-" * 72)
-    print(f"docType   : {result['docType']}")
-    print(f"skipReason: {result['skipReason']}")
-    print(f"rows      : {len(result['transactions'])}")
-    for tx in result["transactions"]:
+    print(f"total rows: {len(rows)}")
+    for tx in rows:
         print("  " + json.dumps(tx, ensure_ascii=False))
     return 0
 
