@@ -22,11 +22,14 @@ export function CameraCapturePanel({ onStartCamera, onPickFromGallery, onPasteIm
       <div className="flex gap-2">
         <button
           onClick={onPickFromGallery}
-          className="flex-1 py-3 rounded-2xl font-medium flex items-center justify-center gap-2"
+          className="flex-1 py-3 rounded-2xl font-medium flex flex-col items-center justify-center gap-0.5"
           style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 14 }}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>photo_library</span>
-          Gallery
+          <span className="flex items-center gap-2">
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>upload_file</span>
+            Upload file
+          </span>
+          <span style={{ fontSize: 11, color: "var(--color-outline)" }}>image or PDF</span>
         </button>
         <button
           onClick={onPasteImage}
@@ -34,16 +37,16 @@ export function CameraCapturePanel({ onStartCamera, onPickFromGallery, onPasteIm
           style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface-variant)", fontSize: 14 }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>content_paste</span>
-          Paste Image
+          Paste
         </button>
       </div>
 
       <div className="rounded-2xl p-4 flex flex-col gap-2" style={{ background: "var(--color-primary-fixed)" }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-primary)" }}>How it works</p>
         {[
-          { icon: "photo_camera", text: "Take a photo of any receipt or bill" },
+          { icon: "photo_camera", text: "Photograph a receipt, or upload a PDF bill, invoice or statement" },
           { icon: "cloud_upload", text: "Instantly saved to your Google Drive" },
-          { icon: "auto_awesome", text: "AI reads it in the background — no waiting" },
+          { icon: "auto_awesome", text: "AI reads it in the background — itemised bills become a row per item" },
           { icon: "check_circle", text: "Transaction appears in your list automatically" },
         ].map(({ icon, text }) => (
           <div key={icon} className="flex items-center gap-2">

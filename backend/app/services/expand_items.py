@@ -16,14 +16,15 @@ def unit_price_note(qty: float | None, unit_price: float | None = None) -> str |
     return f"₹{unit_price}/unit" if unit_price is not None and qty is not None and qty > 1 else None
 
 
-async def expand_items_to_rows(
-    session: SheetSession,
-    placeholder_id: str,
+def build_item_rows(
     base: dict,
     items: list[dict],
     now: str,
     total_amount: float | None = None,
-) -> None:
+) -> list[dict]:
+    """One row per priced item, plus a balancer for whatever the items do not
+    account for. Shared so a photographed receipt and an uploaded order PDF
+    expand identically — only the entry point differs."""
     rows: list[dict] = []
     for item in items:
         rows.append({
@@ -42,21 +43,44 @@ async def expand_items_to_rows(
     if total_amount is not None:
         items_total = sum(i["price"] for i in items)
         diff = float(f"{total_amount - items_total:.2f}")
-        if diff > 0.01:
+        # The rows must sum to what was actually charged. A shortfall is
+        # tax/delivery the lines did not name; an excess is a discount applied
+        # to the order. Without the second case an Amazon order with ₹1,025 off
+        # would report the full list price as spend.
+        if abs(diff) > 0.01:
             rows.append({
                 "id": str(uuid.uuid4()),
                 **base,
                 "amount": diff,
-                "item_name": "Other Items",
+                "item_name": "Other Items" if diff > 0 else "Discount",
                 "quantity": None,
                 "notes": None,
                 "status": "done",
                 "created_at": now,
                 "updated_at": now,
             })
+    return rows
 
+
+def priced_items(items) -> list[dict]:
+    """Only priced lines can become rows — splitting a total across unpriced
+    items would be inventing the numbers."""
+    return [i for i in (items or []) if isinstance(i, dict) and i.get("price") is not None]
+
+
+async def expand_items_to_rows(
+    session: SheetSession,
+    placeholder_id: str,
+    base: dict,
+    items: list[dict],
+    now: str,
+    total_amount: float | None = None,
+) -> None:
     # A receipt with a dozen items is one request, not thirteen.
-    await append_transactions(session.access_token, session.sheet_id, rows)
+    await append_transactions(
+        session.access_token, session.sheet_id,
+        build_item_rows(base, items, now, total_amount),
+    )
 
     await update_transaction_field(
         session.access_token, session.sheet_id, placeholder_id,

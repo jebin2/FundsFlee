@@ -9,6 +9,7 @@ import uuid
 
 from app.ai.parser import NO_FLOOR, fold_items, parse_units
 from app.core.dates import today_iso, now_iso
+from app.services.expand_items import build_item_rows, priced_items
 from app.extract.pipeline import collect_units
 from app.core.deps import SheetSession
 from app.core.logger import log
@@ -54,32 +55,45 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
         now = now_iso()
         rows_to_write = []
         for row in rows:
-            # The prompt leaves item_name null when items covers it, so without
-            # this the extracted line items were parsed and then dropped.
-            fold_items(row)
-            tx = {
-                "id": str(uuid.uuid4()),
+            base = {
                 "date": row.get("date"),
                 "time": row.get("time") or "00:00",
-                "amount": row.get("amount"),
                 "merchant": row.get("merchant"),
                 "category": row.get("category"),
                 "subcategory": row.get("subcategory"),
                 "original_amount": row.get("original_amount"),
                 "original_currency": row.get("original_currency"),
-                "item_name": row.get("item_name"),
-                "tags": row.get("tags"),
-                "quantity": row.get("quantity"),
-                "raw_input": placeholder.get("raw_input"),
                 "payment_method": row.get("payment_method") or "Other",
+                "tags": row.get("tags"),
                 "notes": row.get("notes"),
                 "source": "import",
+                "raw_input": placeholder.get("raw_input"),
                 "receipt_id": placeholder_id,
-                "status": "done",
-                "created_at": now,
-                "updated_at": now,
             }
-            rows_to_write.append(tx)
+
+            # Same rule as a photographed receipt: an itemised bill with real
+            # per-item prices becomes a row each; anything else stays one row
+            # with the item names folded into notes, because splitting a total
+            # across unpriced lines would be inventing the numbers.
+            items = priced_items(row.get("items"))
+            if len(items) > 1:
+                log.info("statement-parse", "expanding to item rows",
+                         {"placeholderId": placeholder_id, "items": len(items)})
+                rows_to_write.extend(build_item_rows(base, items, now, row.get("amount")))
+            else:
+                fold_items(row)
+                rows_to_write.append({
+                    **base,
+                    "id": str(uuid.uuid4()),
+                    "amount": row.get("amount"),
+                    "item_name": row.get("item_name"),
+                    "quantity": row.get("quantity"),
+                    "notes": row.get("notes"),
+                    "status": "done",
+                    "created_at": now,
+                    "updated_at": now,
+                })
+
         # One request for the whole statement, not one per debit line.
         await append_transactions(session.access_token, session.sheet_id, rows_to_write)
 

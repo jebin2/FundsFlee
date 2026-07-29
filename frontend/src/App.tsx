@@ -13,7 +13,6 @@ import CapturePage from "./app/(app)/capture/page";
 import AnalysisPage from "./app/(app)/analysis/page";
 import ComparePage from "./app/(app)/compare/page";
 import CategoriesPage from "./app/(app)/categories/page";
-import ImportPage from "./app/(app)/import/page";
 import SettingsPage from "./app/(app)/settings/page";
 import SettingsProfile from "./app/(app)/settings/profile/page";
 import SettingsEmail from "./app/(app)/settings/email/page";
@@ -38,7 +37,6 @@ export default function App() {
         <Route path="/analysis" element={<AnalysisPage />} />
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/import" element={<ImportPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/profile" element={<SettingsProfile />} />
         <Route path="/settings/email" element={<SettingsEmail />} />

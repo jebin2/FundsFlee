@@ -37,9 +37,9 @@ function CaptureContent() {
           return;
         }
       }
-      alert("No image found in clipboard. Copy an image first, then tap Paste Image.");
+      alert("No image found in clipboard. Copy an image first, then tap Paste.");
     } catch {
-      alert("Could not read clipboard. On iOS, copy an image then use Paste Image.");
+      alert("Could not read clipboard. On iOS, copy an image then use Paste.");
     }
   }, [handleReceiptFile]);
 
@@ -152,7 +152,7 @@ function CaptureContent() {
         </>
       )}
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden"
+      <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleReceiptFile(f); }} />
     </div>
   );
