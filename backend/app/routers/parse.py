@@ -6,16 +6,14 @@ prompt (more detailed than the background job's).
 """
 import asyncio
 import base64
-import json
-import re
 
-from anthropic import AsyncAnthropic
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.ai.parse_image import parse_receipt_image
+from app.ai.parse_statement import StatementParseError, parse_statement_pdf
 from app.ai.parse_text import parse_transaction_text
-from app.config import settings
 from app.core.dates import today_iso
+from app.extract.pdf import PdfError
 from app.core.deps import SheetSession, require_session
 from app.jobs.statement_parse_job import run_statement_parse_job
 from app.jobs.text_parse_job import run_text_parse_job
@@ -25,7 +23,6 @@ from app.use_cases.create_text_parse_request import create_text_parse_request
 router = APIRouter()
 
 VALID_TYPES = ("image/jpeg", "image/png", "image/webp")
-_OBJECT_RE = re.compile(r"\{[\s\S]*\}")
 
 SYSTEM_PROMPT = """You are a bank statement parser for an Indian spending tracker.
 Extract all debit transactions from the provided bank statement PDF.
@@ -89,36 +86,15 @@ async def parse_statement(request: Request, _session: SheetSession = Depends(req
     if len(data) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 20MB)")
 
-    b64 = base64.b64encode(data).decode()
-
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key or None)
-    msg = await client.messages.create(
-        model=settings.ai_model or "claude-sonnet-4-6",
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}},
-                {"type": "text", "text": f"Today's date is {today_iso()}. Extract all debit transactions from this bank statement."},
-            ],
-        }],
-    )
-
-    block = msg.content[0]
-    if block.type != "text":
-        raise HTTPException(status_code=500, detail="Unexpected AI response")
-
-    json_match = _OBJECT_RE.search(block.text)
-    if not json_match:
-        raise HTTPException(status_code=500, detail="Could not parse AI response")
-
     try:
-        parsed = json.loads(json_match.group(0))
-    except Exception:
+        rows = await parse_statement_pdf(data, SYSTEM_PROMPT, today_iso())
+    except PdfError as err:
+        # Encrypted or unreadable — the message is written for the user.
+        raise HTTPException(status_code=400, detail=str(err))
+    except StatementParseError:
         raise HTTPException(status_code=500, detail="Could not parse AI response")
 
-    return {"transactions": parsed.get("transactions") or []}
+    return {"transactions": rows}
 
 
 # ── Async job + manual retry ─────────────────────────────────────────────────

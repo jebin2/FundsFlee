@@ -1,16 +1,13 @@
 """Bank statement parse job — port of src/server/jobs/statementParseJob.ts.
 
-Calls Anthropic directly with a PDF document block (the provider chain only
-handles text/image), so the SYSTEM_PROMPT below is local to this job.
+The PDF is extracted first (text layer, or rasterised pages when scanned) and
+parsed through the provider chain, so this no longer depends on Anthropic alone.
+The SYSTEM_PROMPT below stays local to this job — the route's is different.
 """
-import base64
-import json
 import re
 import uuid
 
-from anthropic import AsyncAnthropic
-
-from app.config import settings
+from app.ai.parse_statement import parse_statement_pdf
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
@@ -44,7 +41,6 @@ Rules:
 - Infer category from merchant when possible"""
 
 _DRIVE_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]+)")
-_OBJECT_RE = re.compile(r"\{[\s\S]*\}")
 
 
 def _receipt_file_id(url: str) -> str | None:
@@ -69,31 +65,7 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
             return
 
         downloaded = await download_receipt_from_drive(session.access_token, file_id)
-        base64_data = base64.b64encode(downloaded["buffer"]).decode()
-
-        client = AsyncAnthropic(api_key=settings.anthropic_api_key or None)
-        msg = await client.messages.create(
-            model=settings.ai_model or "claude-sonnet-4-6",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": base64_data}},
-                    {"type": "text", "text": f"Today is {today_iso()}. Extract all debit transactions."},
-                ],
-            }],
-        )
-
-        block = msg.content[0]
-        if block.type != "text":
-            raise RuntimeError("Unexpected AI response type")
-
-        json_match = _OBJECT_RE.search(block.text)
-        if not json_match:
-            raise RuntimeError("Could not parse AI response")
-
-        rows = json.loads(json_match.group(0)).get("transactions", [])
+        rows = await parse_statement_pdf(downloaded["buffer"], SYSTEM_PROMPT, today_iso())
 
         log.info("statement-parse", f"extracted {len(rows)} transactions", {"placeholderId": placeholder_id})
 
