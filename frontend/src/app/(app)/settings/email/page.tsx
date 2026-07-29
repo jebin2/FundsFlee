@@ -72,19 +72,27 @@ export default function EmailImportSettingsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  type ConfigPatch = Partial<{
+  type EmailConfig = {
     fromContains: string[]; subjectContains: string[]; daysBack: number; attachments: boolean;
-  }>;
+  };
+  type ConfigPatch = Partial<EmailConfig>;
 
-  // Sends the whole config, with the patch applied over current state — state
-  // set in the same handler is not yet visible here.
-  async function saveConfig(patch: ConfigPatch = {}) {
+  // The debounced save fires long after the render that scheduled it, so it
+  // reads the config from a ref rather than a stale closure.
+  const configRef = useRef<EmailConfig>({ fromContains, subjectContains, daysBack, attachments });
+  useEffect(() => {
+    configRef.current = { fromContains, subjectContains, daysBack, attachments };
+  });
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persist = useCallback(async (cfg: EmailConfig) => {
     setError("");
     try {
       const res = await fetch("/api/email/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromContains, subjectContains, daysBack, attachments, ...patch }),
+        body: JSON.stringify(cfg),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -93,7 +101,33 @@ export default function EmailImportSettingsPage() {
     } catch {
       setError("Network error — please try again.");
     }
-  }
+  }, []);
+
+  // Tapping six suggestions used to be six PUTs, each a read and a write
+  // against a 60-per-minute Sheets quota. One save after the tapping stops.
+  const scheduleSave = useCallback((patch: ConfigPatch = {}) => {
+    configRef.current = { ...configRef.current, ...patch };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void persist(configRef.current);
+    }, 800);
+  }, [persist]);
+
+  const flushSave = useCallback(async () => {
+    if (!saveTimer.current) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    await persist(configRef.current);
+  }, [persist]);
+
+  // Don't lose the last tap to a navigation.
+  useEffect(() => () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      void persist(configRef.current);
+    }
+  }, [persist]);
 
   function addFilter(value?: string) {
     const val = (value ?? filterInput).trim().toLowerCase();
@@ -102,13 +136,13 @@ export default function EmailImportSettingsPage() {
     setFromContains(next);
     setFilterInput("");
     if (value === undefined) filterInputRef.current?.focus();
-    void saveConfig({ fromContains: next });
+    scheduleSave({ fromContains: next });
   }
 
   function removeFilter(f: string) {
     const next = fromContains.filter((x) => x !== f);
     setFromContains(next);
-    void saveConfig({ fromContains: next });
+    scheduleSave({ fromContains: next });
   }
 
   function addSubject(value?: string) {
@@ -118,13 +152,13 @@ export default function EmailImportSettingsPage() {
     setSubjectContains(next);
     setSubjectInput("");
     if (value === undefined) subjectInputRef.current?.focus();
-    void saveConfig({ subjectContains: next });
+    scheduleSave({ subjectContains: next });
   }
 
   function removeSubject(s: string) {
     const next = subjectContains.filter((x) => x !== s);
     setSubjectContains(next);
-    void saveConfig({ subjectContains: next });
+    scheduleSave({ subjectContains: next });
   }
 
   async function fetchNow() {
@@ -132,7 +166,7 @@ export default function EmailImportSettingsPage() {
     setError("");
     setJobState("running");
     try {
-      await saveConfig();
+      await flushSave();
       const res = await fetch("/api/email/fetch?manual=1", { method: "POST" });
       if (!res.ok) { setJobState("idle"); setError("Could not start fetch — please try again."); return; }
       startPolling(async (_, stop) => {
@@ -352,7 +386,7 @@ export default function EmailImportSettingsPage() {
                 onClick={() => {
                   const next = !attachments;
                   setAttachments(next);
-                  void saveConfig({ attachments: next });
+                  scheduleSave({ attachments: next });
                 }}
                 className="flex-shrink-0 rounded-full"
                 style={{
@@ -380,7 +414,7 @@ export default function EmailImportSettingsPage() {
                     const n = Math.min(3650, Math.max(0, parseInt(daysInput, 10) || 0));
                     setDaysInput(String(n));
                     setDaysBack(n);
-                    void saveConfig({ daysBack: n });
+                    scheduleSave({ daysBack: n });
                   }}
                   onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                   className="w-14 px-2 py-1 rounded-lg text-center font-semibold outline-none"
