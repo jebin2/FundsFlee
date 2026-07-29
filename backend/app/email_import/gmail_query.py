@@ -30,6 +30,11 @@ def build_gmail_query(
     if last_run:
         epoch = datetime.fromisoformat(last_run.replace("Z", "+00:00")).timestamp()
         date_part = f"after:{math.floor(epoch)}"
-    else:
+    elif days_back and days_back > 0:
         date_part = f"newer_than:{days_back}d"
-    return f"{match_part} {date_part}"
+    else:
+        # 0 means no date limit — search the whole mailbox. Gmail still caps the
+        # result set, so this returns the most recent matches rather than every
+        # message ever.
+        date_part = ""
+    return f"{match_part} {date_part}".strip()

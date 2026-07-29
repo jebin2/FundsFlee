@@ -15,6 +15,29 @@ class TestSenderOnly:
         assert "newer_than" not in q
 
 
+class TestDateWindow:
+    """0 means no date limit. The field used to clamp to a minimum of 1, so
+    there was no way to ask for the whole mailbox."""
+
+    def test_zero_drops_the_date_clause(self):
+        assert build_gmail_query(["hdfc"], 0) == "from:hdfc"
+
+    def test_zero_with_subject_only(self):
+        assert build_gmail_query([], 0, None, ["debited"]) == 'subject:"debited"'
+
+    def test_a_large_window_is_allowed(self):
+        # 365 was the old ceiling; a mailbox worth importing can be older.
+        assert build_gmail_query(["hdfc"], 700) == "from:hdfc newer_than:700d"
+
+    def test_last_run_still_wins_over_zero(self):
+        # An incremental run must not silently rescan everything.
+        q = build_gmail_query(["hdfc"], 0, "2026-07-15T10:30:00Z")
+        assert q.startswith("from:hdfc after:")
+
+    def test_no_trailing_space_when_the_clause_is_dropped(self):
+        assert build_gmail_query(["hdfc"], 0) == build_gmail_query(["hdfc"], 0).strip()
+
+
 class TestSubject:
     def test_subject_only(self):
         assert build_gmail_query([], 7, None, ["transaction alert"]) == \

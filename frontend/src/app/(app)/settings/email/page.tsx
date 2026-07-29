@@ -27,7 +27,10 @@ export default function EmailImportSettingsPage() {
   const [status,       setStatus]       = useState<EmailStatus | null>(null);
   const [fromContains, setFromContains] = useState<string[]>([]);
   const [subjectContains, setSubjectContains] = useState<string[]>([]);
-  const [daysBack,     setDaysBack]     = useState(7);
+  const [daysBack,     setDaysBack]     = useState(0);
+  // The field holds raw text while typing. Coercing on every keystroke meant
+  // clearing it snapped to a default, so "700" could never be typed at all.
+  const [daysInput,    setDaysInput]    = useState("0");
   const [attachments,  setAttachments]  = useState(true);
   const [filterInput,  setFilterInput]  = useState("");
   const [subjectInput, setSubjectInput] = useState("");
@@ -51,6 +54,7 @@ export default function EmailImportSettingsPage() {
       setFromContains(data.fromContains);
       setSubjectContains(data.subjectContains ?? []);
       setDaysBack(data.daysBack);
+      setDaysInput(String(data.daysBack));
       setAttachments(data.attachments);
       if (data.runningAt && Date.now() - new Date(data.runningAt).getTime() < 5 * 60 * 1000) {
         setJobState("running");
@@ -370,13 +374,21 @@ export default function EmailImportSettingsPage() {
                 style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
                 <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)", flex: 1 }}>Search last</p>
                 <input
-                  type="number" min={1} max={365} value={daysBack}
-                  onChange={(e) => setDaysBack(Math.max(1, parseInt(e.target.value) || 7))}
-                  onBlur={() => void saveConfig()}
+                  type="number" min={0} max={3650} inputMode="numeric" value={daysInput}
+                  onChange={(e) => setDaysInput(e.target.value)}
+                  onBlur={() => {
+                    const n = Math.min(3650, Math.max(0, parseInt(daysInput, 10) || 0));
+                    setDaysInput(String(n));
+                    setDaysBack(n);
+                    void saveConfig({ daysBack: n });
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                   className="w-14 px-2 py-1 rounded-lg text-center font-semibold outline-none"
                   style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface)", fontSize: 15, border: "1px solid var(--color-outline-variant)" }}
                 />
-                <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>days</p>
+                <p style={{ fontSize: 14, color: "var(--color-on-surface-variant)" }}>
+                  {daysBack === 0 ? "days — all time" : "days"}
+                </p>
               </div>
               <button
                 onClick={fetchNow}
@@ -391,7 +403,8 @@ export default function EmailImportSettingsPage() {
             </div>
 
             <p style={{ fontSize: 12, color: "var(--color-outline)", lineHeight: 1.5 }}>
-              Auto-import also runs once daily when you open the app.{" "}
+              0 days searches your whole mailbox. Auto-import also runs once daily when you
+              open the app.{" "}
               {attachments
                 ? "Email text and attachments are both read."
                 : "Only email text is read — no attachments."}

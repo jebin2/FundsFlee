@@ -10,7 +10,7 @@ async def read_email_import_config(session: SheetSession) -> dict:
     return {
         "fromContains": safe_json_parse(meta.get("email_import_from_contains"), []),
         "subjectContains": safe_json_parse(meta.get("email_import_subject_contains"), []),
-        "daysBack": js_parse_int(meta.get("email_import_days_back")) if meta.get("email_import_days_back") else 7,
+        "daysBack": js_parse_int(meta.get("email_import_days_back"), 0) or 0,
         "region": meta.get("region") or "",
         # On unless explicitly switched off. Statements and forwarded alerts
         # carry their content in attachments, so reading them is the useful

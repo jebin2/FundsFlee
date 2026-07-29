@@ -40,7 +40,7 @@ async def get_email_import_status(session: SheetSession) -> dict:
     return {
         "fromContains": safe_json_parse(meta.get("email_import_from_contains"), []),
         "subjectContains": safe_json_parse(meta.get("email_import_subject_contains"), []),
-        "daysBack": js_parse_int(meta.get("email_import_days_back")) if meta.get("email_import_days_back") else 7,
+        "daysBack": js_parse_int(meta.get("email_import_days_back"), 0) or 0,
         "attachments": meta.get("email_import_attachments") != "0",
         "lastRun": meta.get("email_import_last_run") or None,
         "totalTxImported": js_parse_int(meta.get("email_import_tx_count"), 0) or 0,
