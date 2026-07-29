@@ -17,6 +17,9 @@ google-api-python-client>=2.150
 google-auth>=2.35
 google-auth-httplib2>=0.2
 
+# PDF extraction (text layer + page rasterisation, no system packages needed)
+pymupdf>=1.24
+
 # AI providers
 anthropic>=0.40
 google-genai>=1.0
