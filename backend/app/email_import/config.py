@@ -11,6 +11,9 @@ async def read_email_import_config(session: SheetSession) -> dict:
         "fromContains": safe_json_parse(meta.get("email_import_from_contains"), []),
         "daysBack": js_parse_int(meta.get("email_import_days_back")) if meta.get("email_import_days_back") else 7,
         "region": meta.get("region") or "",
+        # Opt-in: downloading and AI-parsing attachments costs quota and money,
+        # so it stays off until the user asks for it.
+        "attachments": meta.get("email_import_attachments") == "1",
         "lastRun": meta.get("email_import_last_run") or None,
         "txCount": js_parse_int(meta.get("email_import_tx_count"), 0) or 0,
         "runningAt": meta.get("email_import_running_at") or None,

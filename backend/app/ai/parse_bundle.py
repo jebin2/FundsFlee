@@ -108,7 +108,14 @@ async def parse_email_bundle(
     returning JSON is not evidence the JSON is sane.
     """
     t0 = time.time()
-    parseable = [u for u in units if u["kind"] in ("email", "document") and u.get("text")]
+    # An email unit is worth sending even with an empty body — a statement mail
+    # is often just a subject line plus the attachment, and From/Subject are
+    # real signal for the model.
+    parseable = [
+        u for u in units
+        if (u["kind"] == "document" and u.get("text"))
+        or (u["kind"] == "email" and (u.get("text") or u.get("subject")))
+    ]
     if not parseable:
         log.warn("bundle", "no parseable units — nothing sent to AI",
                  {"units": len(units), "kinds": ",".join(sorted({u["kind"] for u in units})) or "none"})

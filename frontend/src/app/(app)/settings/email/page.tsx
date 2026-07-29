@@ -13,6 +13,7 @@ interface EmailStatus {
   emailsParsed: number;
   emailsSkipped: number;
   runningAt: string | null;
+  attachments: boolean;
 }
 
 type JobState = "idle" | "running" | "done";
@@ -23,6 +24,7 @@ export default function EmailImportSettingsPage() {
   const [status,       setStatus]       = useState<EmailStatus | null>(null);
   const [fromContains, setFromContains] = useState<string[]>([]);
   const [daysBack,     setDaysBack]     = useState(7);
+  const [attachments,  setAttachments]  = useState(false);
   const [filterInput,  setFilterInput]  = useState("");
   const [error,        setError]        = useState("");
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +44,7 @@ export default function EmailImportSettingsPage() {
       setStatus(data);
       setFromContains(data.fromContains);
       setDaysBack(data.daysBack);
+      setAttachments(data.attachments);
       if (data.runningAt && Date.now() - new Date(data.runningAt).getTime() < 5 * 60 * 1000) {
         setJobState("running");
         startPolling(async (_, stop) => {
@@ -58,13 +61,13 @@ export default function EmailImportSettingsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  async function saveConfig(filters: string[], days: number) {
+  async function saveConfig(filters: string[], days: number, attach: boolean = attachments) {
     setError("");
     try {
       const res = await fetch("/api/email/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromContains: filters, daysBack: days }),
+        body: JSON.stringify({ fromContains: filters, daysBack: days, attachments: attach }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -251,6 +254,39 @@ export default function EmailImportSettingsPage() {
               </div>
             )}
 
+            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+              style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, color: "var(--color-on-surface)" }}>Read attachments</p>
+                <p style={{ fontSize: 12, color: "var(--color-outline)", marginTop: 2, lineHeight: 1.4 }}>
+                  Also parse PDF statements, invoices and receipt images. Uses more AI credits.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={attachments}
+                aria-label="Read attachments"
+                onClick={() => {
+                  const next = !attachments;
+                  setAttachments(next);
+                  void saveConfig(fromContains, daysBack, next);
+                }}
+                className="flex-shrink-0 rounded-full"
+                style={{
+                  width: 44, height: 26, padding: 3,
+                  background: attachments ? "var(--color-primary)" : "var(--color-outline-variant)",
+                  transition: "background 150ms",
+                }}>
+                <span style={{
+                  display: "block", width: 20, height: 20, borderRadius: "50%",
+                  background: attachments ? "var(--color-on-primary)" : "var(--color-surface-container-lowest)",
+                  transform: attachments ? "translateX(18px)" : "translateX(0)",
+                  transition: "transform 150ms",
+                }} />
+              </button>
+            </div>
+
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 px-4 py-3 rounded-2xl flex-1"
                 style={{ background: "var(--color-surface-container-lowest)", border: "1px solid var(--color-outline-variant)" }}>
@@ -277,7 +313,10 @@ export default function EmailImportSettingsPage() {
             </div>
 
             <p style={{ fontSize: 12, color: "var(--color-outline)", lineHeight: 1.5 }}>
-              Auto-import also runs once daily when you open the app. Only email text is read — no attachments.
+              Auto-import also runs once daily when you open the app.{" "}
+              {attachments
+                ? "Email text and attachments are both read."
+                : "Only email text is read — no attachments."}
             </p>
           </div>
         </div>

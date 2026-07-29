@@ -3,13 +3,16 @@ import asyncio
 import uuid
 from datetime import datetime, timezone
 
+from app.ai.parse_bundle import parse_email_bundle
 from app.ai.parse_email import extract_email_text, parse_email_transaction
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
+from app.email_import.attachments import fetch_attachments
 from app.email_import.config import read_email_import_config
 from app.email_import.gmail_query import build_gmail_query
 from app.email_import.mime_text_extractor import extract_payload_text
+from app.extract.pipeline import collect_units
 from app.email_import.post_import_duplicate_check import deduplicate_new_transactions
 from app.sheets import (
     append_transaction,
@@ -44,7 +47,8 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
     try:
         tag = "manual" if manual else "auto"
         log.info("email", f"started ({tag})",
-                 {"filters": ",".join(config["fromContains"]), "daysBack": config["daysBack"]})
+                 {"filters": ",".join(config["fromContains"]), "daysBack": config["daysBack"],
+                  "attachments": "on" if config["attachments"] else "off"})
 
         gmail = get_gmail_client(session.access_token)
         query = build_gmail_query(config["fromContains"], config["daysBack"],
@@ -82,6 +86,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             subject = ""
             body_text = ""
             received_time = "00:00"
+            payload: dict = {}
 
             try:
                 msg_res = await asyncio.to_thread(
@@ -108,11 +113,32 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 result["failed"] += 1
                 continue
 
-            parsed = await parse_email_transaction(body_text, from_, subject, config["region"], today)
-            transaction = parsed["transaction"]
-            skip_reason = parsed.get("skipReason")  # absent on the success path (JS destructure → undefined)
+            # Opt-in: with attachments on, the whole bundle (body + every
+            # attachment) goes to the model in one call so component invoices
+            # merge into the single payment they describe. Off, or with nothing
+            # attached, the proven body-only path runs unchanged.
+            attachments = []
+            if config["attachments"]:
+                try:
+                    attachments = await fetch_attachments(gmail, msg_id, payload)
+                except Exception as err:
+                    log.error("email", "attachment fetch failed", err, {"messageId": msg_id})
 
-            if not transaction:
+            if attachments:
+                units = [{"kind": "email", "text": body_text, "from": from_,
+                          "subject": subject, "date": None, "source": subject}]
+                for att in attachments:
+                    units.extend(await collect_units(
+                        att["data"], att["mime_type"], att["filename"] or subject))
+                bundle = await parse_email_bundle(units, config["region"], today)
+                transactions = bundle["transactions"]
+                skip_reason = bundle["skipReason"]
+            else:
+                parsed = await parse_email_transaction(body_text, from_, subject, config["region"], today)
+                transactions = [parsed["transaction"]] if parsed["transaction"] else []
+                skip_reason = parsed.get("skipReason")  # absent on success (JS destructure → undefined)
+
+            if not transactions:
                 log.info("email", f'skipped "{subject}"', {"reason": skip_reason})
                 try:
                     await record_parsed_email(session.access_token, session.sheet_id, {
@@ -129,38 +155,47 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     result["skipped"] += 1
                 continue
 
+            # A statement bundle yields many rows; a purchase yields exactly one.
             now = now_iso()
-            tx = {
-                "id": str(uuid.uuid4()),
-                "date": transaction["date"],
-                "time": transaction["time"] if transaction["time"] != "00:00" else received_time,
-                "amount": transaction["amount"],
-                "merchant": transaction["merchant"],
-                "category": transaction["category"],
-                "item_name": transaction.get("item_name"),
-                "payment_method": transaction["payment_method"],
-                "notes": transaction.get("notes"),
-                "source": "email",
-                "raw_input": f"{subject} | {from_}"[:500],
-                "created_at": now,
-                "updated_at": now,
-                "status": "done",
-            }
+            msg_tx_ids: list[str] = []
+            for transaction in transactions:
+                tx = {
+                    "id": str(uuid.uuid4()),
+                    "date": transaction["date"],
+                    "time": transaction["time"] if transaction["time"] != "00:00" else received_time,
+                    "amount": transaction["amount"],
+                    "merchant": transaction["merchant"],
+                    "category": transaction["category"],
+                    "item_name": transaction.get("item_name"),
+                    "payment_method": transaction["payment_method"],
+                    "notes": transaction.get("notes"),
+                    "source": "email",
+                    "raw_input": f"{subject} | {from_}"[:500],
+                    "created_at": now,
+                    "updated_at": now,
+                    "status": "done",
+                }
 
-            await append_transaction(session.access_token, session.sheet_id, tx)
-            new_tx_ids.append(tx["id"])
+                await append_transaction(session.access_token, session.sheet_id, tx)
+                msg_tx_ids.append(tx["id"])
+
+                log.info("email", f"imported ₹{tx['amount']} @ {tx['merchant']}",
+                         {"category": tx["category"], "subject": subject})
+
+            new_tx_ids.extend(msg_tx_ids)
 
             try:
                 await record_parsed_email(session.access_token, session.sheet_id, {
                     "emailId": msg_id, "from": from_, "subject": subject,
-                    "parsedAt": now, "status": "parsed", "txIds": [tx["id"]],
+                    "parsedAt": now, "status": "parsed", "txIds": msg_tx_ids,
                 })
             except Exception:
                 pass
 
-            log.info("email", f"imported ₹{tx['amount']} @ {tx['merchant']}",
-                     {"category": tx["category"], "subject": subject})
-            result["imported"] += 1
+            if len(msg_tx_ids) > 1:
+                log.info("email", f'imported {len(msg_tx_ids)} rows from "{subject}"',
+                         {"messageId": msg_id})
+            result["imported"] += len(msg_tx_ids)
 
         try:
             await deduplicate_new_transactions(session, new_tx_ids)
