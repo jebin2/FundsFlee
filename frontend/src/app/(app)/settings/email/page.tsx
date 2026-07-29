@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MobileSettingsHeader } from "@/features/settings/components/MobileSettingsHeader";
 import { usePollingInterval } from "@/features/settings/hooks/usePollingInterval";
+import { SENDER_PRESETS, SUBJECT_PRESETS } from "@/features/settings/emailFilterPresets";
+import { FilterPresets } from "@/features/settings/components/FilterPresets";
 
 interface EmailStatus {
   fromContains: string[];
@@ -89,13 +91,13 @@ export default function EmailImportSettingsPage() {
     }
   }
 
-  function addFilter() {
-    const val = filterInput.trim().toLowerCase();
+  function addFilter(value?: string) {
+    const val = (value ?? filterInput).trim().toLowerCase();
     if (!val || fromContains.includes(val)) { setFilterInput(""); return; }
     const next = [...fromContains, val];
     setFromContains(next);
     setFilterInput("");
-    filterInputRef.current?.focus();
+    if (value === undefined) filterInputRef.current?.focus();
     void saveConfig({ fromContains: next });
   }
 
@@ -105,13 +107,13 @@ export default function EmailImportSettingsPage() {
     void saveConfig({ fromContains: next });
   }
 
-  function addSubject() {
-    const val = subjectInput.trim();
+  function addSubject(value?: string) {
+    const val = (value ?? subjectInput).trim();
     if (!val || subjectContains.includes(val)) { setSubjectInput(""); return; }
     const next = [...subjectContains, val];
     setSubjectContains(next);
     setSubjectInput("");
-    subjectInputRef.current?.focus();
+    if (value === undefined) subjectInputRef.current?.focus();
     void saveConfig({ subjectContains: next });
   }
 
@@ -214,12 +216,12 @@ export default function EmailImportSettingsPage() {
                   type="text"
                   value={filterInput}
                   onChange={(e) => setFilterInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addFilter()}
+                  onKeyDown={(e) => { if (e.key === "Enter") addFilter(); }}
                   placeholder="e.g. hdfcbank, noreply@phonepe.com"
                   className="flex-1 px-3 py-2.5 rounded-xl outline-none text-sm"
                   style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface)", border: "1px solid var(--color-outline-variant)" }}
                 />
-                <button onClick={addFilter} disabled={!filterInput.trim()}
+                <button onClick={() => addFilter()} disabled={!filterInput.trim()}
                   className="px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-1"
                   style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", opacity: filterInput.trim() ? 1 : 0.4 }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
@@ -229,6 +231,7 @@ export default function EmailImportSettingsPage() {
               <p style={{ fontSize: 12, color: "var(--color-outline)" }}>
                 Partial match — &quot;hdfcbank&quot; matches any sender whose address contains that text.
               </p>
+              <FilterPresets groups={SENDER_PRESETS} already={fromContains} onAdd={addFilter} />
             </div>
           </div>
 
@@ -259,12 +262,12 @@ export default function EmailImportSettingsPage() {
                   type="text"
                   value={subjectInput}
                   onChange={(e) => setSubjectInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addSubject()}
+                  onKeyDown={(e) => { if (e.key === "Enter") addSubject(); }}
                   placeholder="e.g. debited, your order from"
                   className="flex-1 px-3 py-2.5 rounded-xl outline-none text-sm"
                   style={{ background: "var(--color-surface-container)", color: "var(--color-on-surface)", border: "1px solid var(--color-outline-variant)" }}
                 />
-                <button onClick={addSubject} disabled={!subjectInput.trim()}
+                <button onClick={() => addSubject()} disabled={!subjectInput.trim()}
                   className="px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-1"
                   style={{ background: "var(--color-primary)", color: "var(--color-on-primary)", opacity: subjectInput.trim() ? 1 : 0.4 }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
@@ -275,6 +278,7 @@ export default function EmailImportSettingsPage() {
                 Partial match on the subject line. Keep these specific — a broad word like
                 &quot;payment&quot; will pull in a lot of mail.
               </p>
+              <FilterPresets groups={SUBJECT_PRESETS} already={subjectContains} onAdd={addSubject} />
             </div>
           </div>
 
