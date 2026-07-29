@@ -32,10 +32,10 @@ Tunnel** (`fundsflee.voidall.com → localhost:3000`).
    pyenv virtualenv 3.10.12 FundsFlee_env   # or any pyenv env; pass PYENV_ENV=… to deploy.sh
    ```
 2. **`.env.local`** (repo root — shared with the old app; the backend reads it):
-   - `NEXTAUTH_URL=https://fundsflee.voidall.com`  ← also used as the backend `BASE_URL`
+   - `BASE_URL=https://fundsflee.voidall.com`
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
    - `JWT_SECRET` — **keep the existing value** (installed iOS Shortcuts depend on it)
-   - `AUTH_SECRET` — reused as the session-cookie secret
+   - `SESSION_SECRET` — signs the session cookie
    - `AI_PROVIDER`, `OPENCODE_API_URL`, optionally `ANTHROPIC_API_KEY`/`GEMINI_API_KEY`
    - optional push: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (`npx web-push generate-vapid-keys`)
 3. **Google OAuth**: add the redirect URI in the Cloud Console for `GOOGLE_CLIENT_ID`:

@@ -68,26 +68,26 @@ envget() {
   printf '%s' "$v"
 }
 
-# Required, honouring the new-name → legacy-name fallbacks the backend accepts.
-BASE_URL_V=$(envget BASE_URL);       [ -z "$BASE_URL_V" ] && BASE_URL_V=$(envget NEXTAUTH_URL)
-SESSION_V=$(envget SESSION_SECRET);  [ -z "$SESSION_V" ]  && SESSION_V=$(envget AUTH_SECRET)
+# Required.
+BASE_URL_V=$(envget BASE_URL)
+SESSION_V=$(envget SESSION_SECRET)
 CID=$(envget GOOGLE_CLIENT_ID)
 CSEC=$(envget GOOGLE_CLIENT_SECRET)
 JWT=$(envget JWT_SECRET)
 
 missing=()
-[ -z "$BASE_URL_V" ] && missing+=("BASE_URL (or NEXTAUTH_URL)")
+[ -z "$BASE_URL_V" ] && missing+=("BASE_URL")
 [ -z "$CID" ]        && missing+=("GOOGLE_CLIENT_ID")
 [ -z "$CSEC" ]       && missing+=("GOOGLE_CLIENT_SECRET")
 [ -z "$JWT" ]        && missing+=("JWT_SECRET")
-[ -z "$SESSION_V" ]  && missing+=("SESSION_SECRET (or AUTH_SECRET)")
+[ -z "$SESSION_V" ]  && missing+=("SESSION_SECRET")
 if [ ${#missing[@]} -gt 0 ]; then
   error "Missing required keys in .env.local:\n    - $(printf '%s\n    - ' "${missing[@]}" | sed '$s/    - $//')\n  See $APP_DIR/.env.local.example."
 fi
 
 # Non-fatal sanity checks.
-[[ "$BASE_URL_V" == *localhost* ]] && warn "BASE_URL/NEXTAUTH_URL is localhost — set it to https://$DOMAIN for the live site."
-[[ "$BASE_URL_V" == */ ]]          && warn "BASE_URL/NEXTAUTH_URL has a trailing slash — backend strips it, but Google's redirect URI must match exactly."
+[[ "$BASE_URL_V" == *localhost* ]] && warn "BASE_URL is localhost — set it to https://$DOMAIN for the live site."
+[[ "$BASE_URL_V" == */ ]]          && warn "BASE_URL has a trailing slash — backend strips it, but Google's redirect URI must match exactly."
 [[ "$JWT" == change-me* || "$JWT" == your-* || "$SESSION_V" == change-me* || "$SESSION_V" == your-* ]] && \
   warn "JWT_SECRET/SESSION_SECRET still looks like a placeholder — set real random values."
 
