@@ -117,10 +117,8 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 result["failed"] += 1
                 continue
 
-            # Opt-in: with attachments on, the whole bundle (body + every
-            # attachment) goes to the model in one call so component invoices
-            # merge into the single payment they describe. Off, or with nothing
-            # attached, the proven body-only path runs unchanged.
+            # Opt-in. Off, or with nothing attached, the proven body-only path
+            # runs unchanged.
             attachments = []
             if config["attachments"]:
                 try:
