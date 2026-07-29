@@ -5,7 +5,7 @@ import time
 from app.core.dates import today_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
-from app.domain.transactions.factory import create_queued_statement_transaction
+from app.domain.transactions.factory import create_queued_pdf_transaction
 from app.jobs.statement_parse_job import run_statement_parse_job
 from app.sheets import append_transaction, get_or_create_receipts_folder, upload_receipt_to_drive
 
@@ -18,7 +18,7 @@ async def create_statement_import_request(
     uploaded = await upload_receipt_to_drive(
         session.access_token, folder_id, buffer, drive_name, "application/pdf"
     )
-    placeholder = create_queued_statement_transaction(uploaded["viewUrl"], filename or drive_name)
+    placeholder = create_queued_pdf_transaction(uploaded["viewUrl"], filename or drive_name)
     await append_transaction(session.access_token, session.sheet_id, placeholder)
 
     async def _job():

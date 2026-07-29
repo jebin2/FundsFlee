@@ -11,7 +11,7 @@ from app.domain.transactions.status import (
 from app.domain.transactions.factory import (
     create_queued_text_parse_transaction,
     create_queued_receipt_transaction,
-    create_queued_statement_transaction,
+    create_queued_pdf_transaction,
     create_merge_placeholder_transaction,
 )
 
@@ -23,6 +23,6 @@ __all__ = [
     "is_merge_status",
     "create_queued_text_parse_transaction",
     "create_queued_receipt_transaction",
-    "create_queued_statement_transaction",
+    "create_queued_pdf_transaction",
     "create_merge_placeholder_transaction",
 ]

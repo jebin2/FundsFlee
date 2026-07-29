@@ -39,10 +39,14 @@ def create_queued_receipt_transaction(receipt_url: str, id: str | None = None) -
     }
 
 
-def create_queued_statement_transaction(receipt_url: str, filename: str = "") -> dict:
+def create_queued_pdf_transaction(receipt_url: str, filename: str = "") -> dict:
     return {
         **_base_placeholder(),
-        "merchant": "Bank Statement",
+        # The file's own name, because this path takes any PDF — an order
+        # summary, an invoice, a statement. "Bank Statement" was left over from
+        # when it only did one of those, and mislabelled every other upload.
+        # It also names which file is in flight when two are queued at once.
+        "merchant": filename[:80] or "Processing PDF…",
         "source": "import",
         "status": "queued",
         "receipt_url": receipt_url,
