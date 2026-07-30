@@ -77,6 +77,16 @@ class Repo:
             rows.append(cur.lastrowid + 1)
         return rows
 
+    def insert_rows(self, rows: list[list[str]]) -> None:
+        """Insert positional rows, already in column order. Used by hydration,
+        which reads the sheet verbatim and must not reinterpret it."""
+        if not rows:
+            return
+        cols = ", ".join(q(c) for c in self.spec.columns)
+        marks = ", ".join("?" for _ in self.spec.columns)
+        self.conn.executemany(
+            f"INSERT INTO {q(self.spec.name)} ({cols}) VALUES ({marks})", rows)
+
     def update(self, fields: dict, **key) -> int:
         """Update the keyed row. Returns rows affected — 0 means no such row,
         which callers should treat as a failure rather than a no-op."""

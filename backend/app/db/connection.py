@@ -23,24 +23,32 @@ DB_DIR = Path(settings.user_store_file).parent / "sheets"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
-def _path(sheet_id: str) -> Path:
+def mirror_path(sheet_id: str) -> Path:
     if not _SAFE_ID.match(sheet_id):
         raise ValueError(f"refusing to open a database for unsafe id: {sheet_id!r}")
     return DB_DIR / f"{sheet_id}.db"
 
 
+def discard_mirror(sheet_id: str) -> None:
+    """Remove the database and its WAL sidecars. Used when hydration fails —
+    a half-populated mirror would be pushed back over the sheet."""
+    base = mirror_path(sheet_id)
+    for suffix in ("", "-wal", "-shm"):
+        base.with_name(base.name + suffix).unlink(missing_ok=True)
+
+
 def mirror_exists(sheet_id: str) -> bool:
     """False means "not hydrated yet", never "the user deleted everything".
     The distinction is what stops an empty local store blanking the sheet."""
-    return _path(sheet_id).exists()
+    return mirror_path(sheet_id).exists()
 
 
 def connect(sheet_id: str) -> sqlite3.Connection:
     """Open the mirror, creating and migrating it if needed."""
-    mirror_path = _path(sheet_id)
+    path = mirror_path(sheet_id)
     DB_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
 
-    conn = sqlite3.connect(mirror_path, isolation_level=None)
+    conn = sqlite3.connect(path, isolation_level=None)
     conn.row_factory = sqlite3.Row
 
     conn.execute("PRAGMA journal_mode=WAL")
@@ -50,7 +58,7 @@ def connect(sheet_id: str) -> sqlite3.Connection:
         conn.execute(stmt)
 
     try:
-        mirror_path.chmod(0o600)
+        path.chmod(0o600)
     except OSError:
         pass
 

@@ -345,16 +345,18 @@ guidelines:
 Each phase is independently deployable and testable, which matters because this
 is running live.
 
-**Phase 0 — registry and engine, no behaviour change.** Promote `_TABS` to a
+**Phase 0 — registry and engine, no behaviour change.** *(done — `app/db/`)* Promote `_TABS` to a
 public `TabSpec` registry. `app/db/` with connection handling (WAL, `aiosqlite`
 or thread-offload), DDL and triggers generated from the registry, and the
 generic `Repo`. Nothing reads it yet. This phase is mostly deletion of
 duplicated plumbing.
 
-**Phase 1 — hydrate.** One generic function over `TABS`: if the local database
-is missing, create it from the registry and fill every tab from the sheet, in
-sheet order. Verify by comparing row counts and a checksum of ids per tab.
-Still nothing reads it.
+**Phase 1 — hydrate.** *(done — `app/db/hydrate.py`)* One generic function over
+`TABS`: if the local database is missing, create it from the registry and fill
+every tab from the sheet, in sheet order. Verified by row count and a checksum
+of the key columns per tab; on mismatch the file is discarded and the failure is
+loud. Hydrated rows are explicitly un-marked, since they came from the sheet and
+are not pending changes. Still nothing reads it.
 
 **Phase 2 — reads move to SQLite.** Behind the existing `app/sheets` facade, so
 call sites do not change. Reads are idempotent, so this is the low-risk half and
