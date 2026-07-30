@@ -27,8 +27,11 @@ export const TransactionFilters = memo(function TransactionFilters({
   customTo, onCustomToChange,
   categories,
 }: TransactionFiltersProps) {
+  // Owns its own vertical rhythm. As a bare fragment the three blocks inherited
+  // whatever the parent gave them, which was nothing — so the custom date row
+  // sat flush against the category chips with only a stray 4px between them.
   return (
-    <>
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-3 px-4 py-3 rounded-2xl" style={{ background: "var(--color-surface-container)" }}>
         <span className="material-symbols-outlined" style={{ color: "var(--color-outline)", fontSize: 20 }}>search</span>
         <input
@@ -46,7 +49,7 @@ export const TransactionFilters = memo(function TransactionFilters({
         )}
       </div>
 
-      <div className="flex flex-col gap-2 pt-1">
+      <div className="flex flex-col gap-2">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {(["week", "month", "year", "custom"] as const).map((p) => (
             <button
@@ -129,6 +132,6 @@ export const TransactionFilters = memo(function TransactionFilters({
           </button>
         ))}
       </div>
-    </>
+    </div>
   );
 });
