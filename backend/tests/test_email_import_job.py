@@ -6,8 +6,6 @@ behind it was not slow to reach — it was unreachable.
 """
 import asyncio
 
-import pytest
-
 import app.jobs.email_import_job as job
 
 
@@ -145,7 +143,7 @@ class TestRetryingAnEmptyMessage:
 
     def test_a_dead_chain_is_retried_even_after_a_previous_failure(self):
         # An outage can outlast one run; parse_error never becomes terminal.
-        assert job._should_retry_empty(["parse_error"], "m1", {"m1": "failed"}) is True
+        assert job._should_retry_empty(["parse_error"], "m1", {"m1": {"status": "failed", "attempts": 1}}) is True
 
     def test_a_first_ai_null_is_retried_once(self):
         # Usually "no debit here", occasionally a non-JSON response.
@@ -153,14 +151,30 @@ class TestRetryingAnEmptyMessage:
 
     def test_a_second_ai_null_is_final(self):
         # Otherwise every marketing email loops forever.
-        assert job._should_retry_empty(["ai_null"], "m1", {"m1": "failed"}) is False
+        assert job._should_retry_empty(["ai_null"], "m1", {"m1": {"status": "failed", "attempts": 1}}) is False
 
     def test_a_hard_failure_outranks_a_spent_ai_null(self):
         assert job._should_retry_empty(
-            ["ai_null", "parse_error"], "m1", {"m1": "failed"}) is True
+            ["ai_null", "parse_error"], "m1",
+            {"m1": {"status": "failed", "attempts": 1}}) is True
 
     def test_a_real_verdict_is_not_retried(self):
         assert job._should_retry_empty(["no_amount"], "m1", {}) is False
 
     def test_nothing_to_report_is_not_retried(self):
         assert job._should_retry_empty([], "m1", {}) is False
+
+
+class TestGivingUp:
+    def test_attempts_count_the_current_try(self):
+        assert job._attempts_of({}, "m1") == 1
+        assert job._attempts_of({"m1": {"status": "failed", "attempts": 2}}, "m1") == 3
+
+    def test_a_message_stops_coming_back_at_the_limit(self):
+        # A provider that stays broken would otherwise make every run a re-run
+        # of the same doomed backlog, at full parse cost per message.
+        states = {"m1": {"status": "failed", "attempts": job.MAX_ATTEMPTS - 1}}
+        assert job._attempts_of(states, "m1") == job.MAX_ATTEMPTS
+
+    def test_a_missing_status_reads_as_empty(self):
+        assert job._status_of({}, "m1") == ""

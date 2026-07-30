@@ -16,4 +16,4 @@ CATEGORIES_HEADERS       = ("id", "name", "parent_id", "color", "icon", "is_defa
 ANALYSIS_CACHE_HEADERS   = ("id", "period", "period_type", "summary_json", "generated_at", "status", "drive_file_id")
 ITEM_SUGGESTIONS_HEADERS = ("key", "field", "current_val", "suggested", "source", "status", "updated_at")
 META_HEADERS             = ("key", "value")
-PARSED_EMAILS_HEADERS    = ("email_id", "from", "subject", "parsed_at", "status", "tx_ids")
+PARSED_EMAILS_HEADERS    = ("email_id", "from", "subject", "parsed_at", "status", "tx_ids", "attempts")

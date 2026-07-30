@@ -21,14 +21,15 @@ def _tx(tx_id, date, merchant="Swiggy", amount=450):
 
 
 def _wire(monkeypatch, all_txs, groups=None, error=None):
-    seen = {"candidates": None, "window": None, "updates": []}
+    seen = {"candidates": None, "window": None, "focus": None, "updates": []}
 
     async def fake_all(token, sheet_id):
         return all_txs
 
-    async def fake_find(candidates, window_days=0):
+    async def fake_find(candidates, window_days=0, focus_ids=None):
         seen["candidates"] = candidates
         seen["window"] = window_days
+        seen["focus"] = focus_ids
         if error:
             raise error
         return groups or []
@@ -55,6 +56,9 @@ class TestScoping:
         asyncio.run(deduplicate_new_transactions(SESSION, ["new"]))
         assert sorted(t["id"] for t in seen["candidates"]) == ["edge", "near", "new"]
         assert seen["window"] == DEDUP_WINDOW_DAYS
+        # Anchored on the new rows, so old-against-old pairs in the span do not
+        # each buy their own AI call.
+        assert seen["focus"] == {"new"}
 
     def test_a_statement_spanning_months_keeps_its_whole_span(self, monkeypatch):
         # The flooding case: many new rows across months. Every original in

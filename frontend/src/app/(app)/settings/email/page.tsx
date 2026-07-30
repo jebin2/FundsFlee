@@ -15,6 +15,7 @@ interface EmailStatus {
   emailsScanned: number;
   emailsParsed: number;
   emailsPartial: number;
+  emailsGaveUp: number;
   emailsSkipped: number;
   runningAt: string | null;
   attachments: boolean;
@@ -361,6 +362,11 @@ export default function EmailImportSettingsPage() {
                       {status.emailsPartial} partly imported — some rows landed, the rest were lost
                     </p>
                   )}
+                  {!!status?.emailsGaveUp && (
+                    <p style={{ fontSize: 12, color: "var(--color-error)", marginTop: 2 }}>
+                      {status.emailsGaveUp} given up on after repeated failures
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -376,6 +382,11 @@ export default function EmailImportSettingsPage() {
                 {!!status.emailsPartial && (
                   <p style={{ fontSize: 12, color: "var(--color-error)", marginTop: 4 }}>
                     {status.emailsPartial} partly imported — some rows landed, the rest were lost
+                  </p>
+                )}
+                {!!status.emailsGaveUp && (
+                  <p style={{ fontSize: 12, color: "var(--color-error)", marginTop: 4 }}>
+                    {status.emailsGaveUp} given up on after repeated failures
                   </p>
                 )}
               </div>

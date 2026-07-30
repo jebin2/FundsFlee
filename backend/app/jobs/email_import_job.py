@@ -17,11 +17,15 @@ from app.services.expand_items import rows_from_parsed
 from app.services.duplicate_scan import deduplicate_new_transactions
 from app.sheets import (
     append_transactions,
-    get_email_statuses,
+    get_email_states,
     record_parsed_email,
     set_meta_values,
 )
-from app.sheets.parsed_emails import RETRYABLE_STATUSES
+from app.sheets.parsed_emails import (
+    EXHAUSTED_STATUS,
+    MAX_ATTEMPTS,
+    RETRYABLE_STATUSES,
+)
 from app.sheets.client import get_gmail_client
 
 
@@ -83,6 +87,15 @@ def _select_pending(message_ids: list[str], processed_ids: set[str]) -> list[str
     return pending[:MAX_MESSAGES_PER_RUN]
 
 
+def _status_of(states: dict, msg_id: str) -> str:
+    return (states.get(msg_id) or {}).get("status", "")
+
+
+def _attempts_of(states: dict, msg_id: str) -> int:
+    """Attempts INCLUDING the one being recorded now."""
+    return (states.get(msg_id) or {}).get("attempts", 0) + 1
+
+
 def _group_hard_failed(reason: str | None) -> bool:
     """A group that errored rather than reaching a verdict.
 
@@ -95,7 +108,7 @@ def _group_hard_failed(reason: str | None) -> bool:
     return reason == "parse_error"
 
 
-def _should_retry_empty(reasons: list[str], msg_id: str, statuses: dict[str, str]) -> bool:
+def _should_retry_empty(reasons: list[str], msg_id: str, states: dict) -> bool:
     """Whether a message that produced NO rows deserves another run.
 
     Safe to retry only because nothing was written. ai_null is ambiguous here,
@@ -107,7 +120,7 @@ def _should_retry_empty(reasons: list[str], msg_id: str, statuses: dict[str, str
     if any(_group_hard_failed(r) for r in reasons):
         return True
     if "ai_null" in reasons:
-        return statuses.get(msg_id) not in RETRYABLE_STATUSES
+        return _status_of(states, msg_id) not in RETRYABLE_STATUSES
     return False
 
 
@@ -158,12 +171,13 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
         # every already-imported message looks new, so one failed read would
         # reimport the entire backlog and duplicate every transaction in it.
         try:
-            statuses = await get_email_statuses(session.access_token, session.sheet_id)
+            states = await get_email_states(session.access_token, session.sheet_id)
         except Exception as err:
             log.error("email", "could not read parsed_emails — skipping this run "
                                "rather than risk reimporting everything", err)
             return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
-        processed_ids = {m for m, st in statuses.items() if st not in RETRYABLE_STATUSES}
+        processed_ids = {m for m, st in states.items()
+                         if st["status"] not in RETRYABLE_STATUSES}
 
         pending = _select_pending(message_ids, processed_ids)
         pending_total = sum(1 for m in message_ids if m not in processed_ids)
@@ -216,7 +230,10 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 try:
                     await record_parsed_email(session.access_token, session.sheet_id, {
                         "emailId": msg_id, "from": from_, "subject": subject,
-                        "parsedAt": now_iso(), "status": "failed", "txIds": [],
+                        "parsedAt": now_iso(),
+                        "status": "failed" if _attempts_of(states, msg_id) < MAX_ATTEMPTS
+                                  else EXHAUSTED_STATUS,
+                        "txIds": [], "attempts": _attempts_of(states, msg_id),
                     })
                 except Exception:
                     pass
@@ -268,15 +285,29 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             if not transactions:
                 # Nothing was written, so retrying the whole message is free of
                 # duplicate risk — mark it failed and let the next run redo it.
-                retry = _should_retry_empty(skip_reasons, msg_id, statuses)
+                attempts = _attempts_of(states, msg_id)
+                retry = _should_retry_empty(skip_reasons, msg_id, states)
+                # Give up eventually. A provider that stays broken would
+                # otherwise make every run a re-run of the same doomed backlog,
+                # at full parse cost per message and forever.
+                exhausted = retry and attempts >= MAX_ATTEMPTS
+                if exhausted:
+                    retry = False
+                    log.warn("email", f'giving up on "{subject}" after '
+                                      f"{attempts} attempts",
+                             {"messageId": msg_id, "reason": skip_reason})
+
                 log.info("email", f'skipped "{subject}"',
-                         {"reason": skip_reason, "willRetry": retry})
+                         {"reason": skip_reason, "willRetry": retry,
+                          "attempts": attempts})
                 try:
                     await record_parsed_email(session.access_token, session.sheet_id, {
                         "emailId": msg_id, "from": from_, "subject": subject,
                         "parsedAt": now_iso(),
-                        "status": "failed" if retry else "skipped",
-                        "txIds": [],
+                        "status": "failed" if retry
+                                  else EXHAUSTED_STATUS if exhausted
+                                  else "skipped",
+                        "txIds": [], "attempts": attempts,
                     })
                 except Exception:
                     pass
@@ -333,7 +364,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 await record_parsed_email(session.access_token, session.sheet_id, {
                     "emailId": msg_id, "from": from_, "subject": subject,
                     "parsedAt": now, "status": "partial" if partial else "parsed",
-                    "txIds": msg_tx_ids,
+                    "txIds": msg_tx_ids, "attempts": _attempts_of(states, msg_id),
                 })
             except Exception:
                 pass

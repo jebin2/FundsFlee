@@ -59,7 +59,11 @@ async def deduplicate_new_transactions(session: SheetSession, new_tx_ids: list[s
         return
 
     try:
-        groups = await find_duplicates(candidates, window_days=DEDUP_WINDOW_DAYS)
+        # Anchored on the rows just written. Without this every date in the span
+        # got its own AI call, including old-against-old comparisons already
+        # made on the run that wrote them — hundreds of calls after a backfill.
+        groups = await find_duplicates(
+            candidates, window_days=DEDUP_WINDOW_DAYS, focus_ids=wanted)
     except Exception as err:
         log.error("dedup", "duplicate scan failed — import kept, nothing flagged", err)
         groups = []

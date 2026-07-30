@@ -13,6 +13,11 @@ from app.ai.client import generate_text
 from app.ai.parse_json import try_parse_ai_json
 from app.core.logger import log
 
+# A backfill spanning years would otherwise make one sequential AI call per
+# date. Bounded so an import cannot turn into an hours-long scan; anything past
+# this is picked up by the daily whole-sheet pass.
+MAX_AI_CALLS = 40
+
 
 def _as_date(value) -> date | None:
     try:
@@ -83,7 +88,19 @@ Respond with JSON only:
 [{{"original_id":"...","duplicate_ids":["..."],"reason":"..."}}]"""
 
 
-async def find_duplicates(transactions: list[dict], window_days: int = 0) -> list[dict]:
+async def find_duplicates(
+    transactions: list[dict],
+    window_days: int = 0,
+    focus_ids: set[str] | None = None,
+) -> list[dict]:
+    """One AI call per candidate window.
+
+    focus_ids narrows which windows are built to those anchored on a row the
+    caller cares about — after an import, the rows just written. Every other
+    pair in the range is old-against-old and was already scanned on the run
+    that introduced it, so re-asking about it costs a call and can only
+    reproduce an existing verdict. Omit it for a full sweep.
+    """
     # Group by date — only dates with 2+ transactions can have duplicates
     by_date: dict[str, list[dict]] = {}
     for tx in transactions:
@@ -93,7 +110,14 @@ async def find_duplicates(transactions: list[dict], window_days: int = 0) -> lis
     claimed: set[str] = set()   # a row is somebody's duplicate only once
     called: set[frozenset] = set()  # overlapping windows repeat candidate sets
 
-    for date_key in sorted(by_date):
+    dates = sorted(by_date)
+    if focus_ids:
+        # The ±window around each anchor still pulls in its neighbours, so a new
+        # row on the 5th is compared against an old one on the 7th.
+        dates = sorted({t["date"] for t in transactions
+                        if t.get("id") in focus_ids and t.get("date")})
+
+    for date_key in dates:
         if window_days > 0:
             focus = _as_date(date_key)
             if focus is None:
@@ -110,6 +134,11 @@ async def find_duplicates(transactions: list[dict], window_days: int = 0) -> lis
         fingerprint = frozenset(t["id"] for t in txs)
         if fingerprint in called:
             continue
+        if len(called) >= MAX_AI_CALLS:
+            log.warn("dedup", f"stopped after {MAX_AI_CALLS} AI calls — "
+                              "the rest of the range was not scanned",
+                     {"datesLeft": len(dates) - dates.index(date_key)})
+            break
         called.add(fingerprint)
 
         payload = _payload(txs, with_date=window_days > 0)

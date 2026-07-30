@@ -7,6 +7,9 @@ from app.sheets.headers import EXPECTED_HEADERS, PARSED_EMAILS_HEADERS
 
 _schema_checked: set[str] = set()
 _parsed_emails_tab_checked: set[str] = set()
+
+# Derived so adding a column to the header tuple is the only edit needed.
+_PARSED_EMAILS_LAST_COL = chr(ord("A") + len(PARSED_EMAILS_HEADERS) - 1)
 _date_format_checked: set[str] = set()
 
 # Pinned so the sheet hands dates back exactly as the app writes them. Without
@@ -61,10 +64,24 @@ def ensure_parsed_emails_tab_sync(sheets, sheet_id: str) -> None:
     if sheet_id in _parsed_emails_tab_checked:
         return
 
+    header_range = f"parsed_emails!A1:{_PARSED_EMAILS_LAST_COL}1"
     try:
-        sheets.spreadsheets().values().get(
-            spreadsheetId=sheet_id, range="parsed_emails!A1"
+        res = sheets.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=header_range
         ).execute()
+        # Tab exists. Rewrite the header if a column has since been added, so
+        # the sheet stays self-describing — the data is written to the wider
+        # range either way, it would just sit under a blank heading.
+        current = (res.get("values") or [[]])[0]
+        if list(current) != list(PARSED_EMAILS_HEADERS):
+            try:
+                sheets.spreadsheets().values().update(
+                    spreadsheetId=sheet_id, range=header_range,
+                    valueInputOption="RAW",
+                    body={"values": [list(PARSED_EMAILS_HEADERS)]},
+                ).execute()
+            except HttpError:
+                pass
         _parsed_emails_tab_checked.add(sheet_id)
         return
     except HttpError:
@@ -81,7 +98,7 @@ def ensure_parsed_emails_tab_sync(sheets, sheet_id: str) -> None:
     try:
         sheets.spreadsheets().values().update(
             spreadsheetId=sheet_id,
-            range="parsed_emails!A1:F1",
+            range=f"parsed_emails!A1:{_PARSED_EMAILS_LAST_COL}1",
             valueInputOption="RAW",
             body={"values": [list(PARSED_EMAILS_HEADERS)]},
         ).execute()

@@ -25,6 +25,7 @@ class FakeSheets:
         self.rows = rows or []
         self.appended: list[list] = []
         self.updated: list[tuple[str, list]] = []
+        self.reads = 0
 
     def spreadsheets(self):
         return self
@@ -33,11 +34,15 @@ class FakeSheets:
         return self
 
     def get(self, spreadsheetId=None, range=None, **kw):
+        self.reads += 1
         return FakeRequest(lambda: {"values": self.rows})
 
     def append(self, spreadsheetId=None, range=None, body=None, **kw):
         self.appended.append(body["values"][0])
-        return FakeRequest(lambda: {})
+        row = len(self.rows) + 2
+        self.rows.append(body["values"][0])
+        return FakeRequest(lambda: {
+            "updates": {"updatedRange": f"parsed_emails!A{row}:G{row}"}})
 
     def update(self, spreadsheetId=None, range=None, body=None, **kw):
         self.updated.append((range, body["values"][0]))
@@ -46,19 +51,23 @@ class FakeSheets:
 
 @pytest.fixture
 def fake(monkeypatch):
+    # Module-level cache, so it has to be cleared or one test seeds the next.
+    mod._index_cache.clear()
     fake = FakeSheets()
     monkeypatch.setattr(mod, "get_sheets_client", lambda token: fake)
     monkeypatch.setattr(mod, "ensure_parsed_emails_tab_sync", lambda s, sid: None)
     return fake
 
 
-def _row(email_id, status, subject="Order"):
-    return [email_id, "noreply@zomato.com", subject, "2026-07-29T00:00:00Z", status, ""]
+def _row(email_id, status, subject="Order", attempts=1):
+    return [email_id, "noreply@zomato.com", subject, "2026-07-29T00:00:00Z",
+            status, "", str(attempts)]
 
 
-def _record(email_id, status):
+def _record(email_id, status, attempts=1):
     return {"emailId": email_id, "from": "noreply@zomato.com", "subject": "Order",
-            "parsedAt": "2026-07-30T00:00:00Z", "status": status, "txIds": []}
+            "parsedAt": "2026-07-30T00:00:00Z", "status": status, "txIds": [],
+            "attempts": attempts}
 
 
 class TestWhatCountsAsHandled:
@@ -88,13 +97,23 @@ class TestWhatCountsAsHandled:
         assert asyncio.run(mod.get_processed_email_ids("tok", "sheet")) == {"a"}
 
 
-class TestStatuses:
-    def test_statuses_are_returned_per_id(self, fake):
+class TestStates:
+    def test_status_and_attempts_are_returned_per_id(self, fake):
         # The job needs the previous status, not just membership, to tell a
-        # first ai_null from one that has already been retried.
-        fake.rows = [_row("a", "parsed"), _row("b", "failed")]
-        assert asyncio.run(mod.get_email_statuses("tok", "sheet")) == {
-            "a": "parsed", "b": "failed"}
+        # first ai_null from one that has already been retried — and the
+        # attempt count to know when to stop retrying at all.
+        fake.rows = [_row("a", "parsed", attempts=1), _row("b", "failed", attempts=2)]
+        assert asyncio.run(mod.get_email_states("tok", "sheet")) == {
+            "a": {"status": "parsed", "attempts": 1},
+            "b": {"status": "failed", "attempts": 2}}
+
+    def test_a_missing_attempts_cell_reads_as_zero(self, fake):
+        fake.rows = [["a", "f", "s", "t", "parsed", ""]]
+        assert asyncio.run(mod.get_email_states("tok", "sheet"))["a"]["attempts"] == 0
+
+    def test_giving_up_is_terminal(self, fake):
+        fake.rows = [_row("a", mod.EXHAUSTED_STATUS)]
+        assert asyncio.run(mod.get_processed_email_ids("tok", "sheet")) == {"a"}
 
 
 class TestReadFailuresAreNotAnEmptyLedger:
@@ -112,7 +131,7 @@ class TestReadFailuresAreNotAnEmptyLedger:
                             lambda fn: (_ for _ in ()).throw(
                                 self._http_error(429, "Quota exceeded")))
         with pytest.raises(HttpError):
-            asyncio.run(mod.get_email_statuses("tok", "sheet"))
+            asyncio.run(mod.get_email_states("tok", "sheet"))
 
     def test_a_missing_tab_is_created_and_reads_empty(self, fake, monkeypatch):
         created = []
@@ -121,7 +140,7 @@ class TestReadFailuresAreNotAnEmptyLedger:
                                 self._http_error(400, "Unable to parse range")))
         monkeypatch.setattr(mod, "ensure_parsed_emails_tab_sync",
                             lambda s, sid: created.append(sid))
-        assert asyncio.run(mod.get_email_statuses("tok", "sheet")) == {}
+        assert asyncio.run(mod.get_email_states("tok", "sheet")) == {}
         assert created == ["sheet"]
 
 
@@ -139,10 +158,43 @@ class TestOneRowPerMessage:
 
         assert fake.appended == []
         range_, row = fake.updated[0]
-        assert range_ == "parsed_emails!A3:F3"   # second data row
+        assert range_ == "parsed_emails!A3:G3"   # second data row
         assert row[mod.COLS["status"]] == "parsed"
 
     def test_the_first_row_is_addressed_correctly(self, fake):
         fake.rows = [_row("a", "failed")]
         asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "parsed")))
-        assert fake.updated[0][0] == "parsed_emails!A2:F2"
+        assert fake.updated[0][0] == "parsed_emails!A2:G2"
+
+
+class TestTheRowIndexIsCached:
+    """record_parsed_email re-read the whole tab for every message. Over a
+    2000-message backlog that is 2000 reads of a growing tab, against a
+    60-reads-per-minute quota."""
+
+    def test_recording_after_a_state_load_costs_no_read(self, fake):
+        fake.rows = [_row("a", "failed")]
+        asyncio.run(mod.get_email_states("tok", "sheet"))
+        reads_after_load = fake.reads
+
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "parsed")))
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("b", "parsed")))
+
+        assert fake.reads == reads_after_load
+        assert fake.updated[0][0] == "parsed_emails!A2:G2"
+
+    def test_an_append_is_addressable_afterwards(self, fake):
+        # The appended row has to enter the index, or the next write for that
+        # message appends a second row instead of updating it.
+        asyncio.run(mod.get_email_states("tok", "sheet"))
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("new", "failed")))
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("new", "parsed")))
+
+        assert len(fake.appended) == 1
+        assert fake.updated[0][0] == "parsed_emails!A2:G2"
+
+    def test_a_cold_cache_still_reads(self, fake):
+        fake.rows = [_row("a", "failed")]
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "parsed")))
+        assert fake.reads == 1
+        assert fake.updated[0][0] == "parsed_emails!A2:G2"
