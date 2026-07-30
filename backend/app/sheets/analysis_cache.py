@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 from googleapiclient.http import MediaInMemoryUpload
 
 from app.core.dates import now_iso, today_iso
+from app.db import mirror
+from app.db.registry import ANALYSIS_CACHE_HEADERS
 from app.sheets.client import get_drive_client, get_sheets_client
 from app.sheets.drive import get_or_create_receipts_folder_sync
 
@@ -98,6 +100,7 @@ def _upsert_analysis_cache_row_sync(
     rows = _read_rows_sync(sheets, sheet_id)
     values = [[str(uuid.uuid4()), period, period_type, summary_json, now_iso(), status, drive_file_id]]
     idx = next((i for i, r in enumerate(rows) if _at(r, 1) == period), -1)
+    record = dict(zip(ANALYSIS_CACHE_HEADERS, values[0]))
 
     if idx >= 0:
         sheets.spreadsheets().values().update(
@@ -106,6 +109,7 @@ def _upsert_analysis_cache_row_sync(
             valueInputOption="RAW",
             body={"values": values},
         ).execute()
+        mirror.update_row(access_token, sheet_id, "analysis_cache", idx + 2, record)
     else:
         sheets.spreadsheets().values().append(
             spreadsheetId=sheet_id,
@@ -113,6 +117,7 @@ def _upsert_analysis_cache_row_sync(
             valueInputOption="RAW",
             body={"values": values},
         ).execute()
+        mirror.append(access_token, sheet_id, "analysis_cache", [record])
 
 
 async def upsert_analysis_cache_row(

@@ -5,20 +5,22 @@ from typing import TypedDict
 
 from googleapiclient.errors import HttpError
 
+from app.db import mirror
+from app.db.registry import EXPECTED_HEADERS
 from app.sheets.client import get_sheets_client, with_sheets_retry
 from app.sheets.migrations import (
     ensure_date_column_format_sync,
     ensure_transaction_schema_sync,
 )
 from app.sheets.transaction_schema import (
-    COLS,
     ID_RANGE,
     LAST_COL,
     is_deleted_row,
     letter,
     row_to_transaction,
     transaction_to_row,
-    transaction_update_to_cells,
+    fields_to_cells,
+    transaction_update_to_fields,
 )
 
 PAGE_SIZE = 200
@@ -123,6 +125,11 @@ def _append_transactions_sync(access_token: str, sheet_id: str, txs: list[dict])
     # New rows are not in the cache — force rebuild on next update call.
     invalidate_row_index(sheet_id)
 
+    # Phase 2 dual-write. The sheet is still authoritative; this only keeps the
+    # mirror in step so reads can move over with evidence.
+    mirror.append(access_token, sheet_id, "transactions",
+                  [dict(zip(EXPECTED_HEADERS, transaction_to_row(tx))) for tx in txs])
+
 
 async def append_transactions(access_token: str, sheet_id: str, txs: list[dict]) -> None:
     """Write many rows in ONE request.
@@ -211,7 +218,10 @@ def _update_transaction_field_sync(
     if not row_number:
         return
 
-    batch_data = transaction_update_to_cells(updates, row_number)
+    # One normalisation, two destinations — the sheet cells and the mirror row
+    # are built from the same values, including the updated_at timestamp.
+    fields = transaction_update_to_fields(updates)
+    batch_data = fields_to_cells(fields, row_number)
     if batch_data:
         # Same split as the append path: everything RAW, the date cell alone
         # USER_ENTERED so an edit does not turn it back into text.
@@ -232,6 +242,8 @@ def _update_transaction_field_sync(
         # Soft deletes change the logical row set — invalidate so next update re-fetches
         if updates.get("deleted"):
             invalidate_row_index(sheet_id)
+
+        mirror.update_row(access_token, sheet_id, "transactions", row_number, fields)
 
 
 async def update_transaction_field(

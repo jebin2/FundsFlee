@@ -7,6 +7,7 @@ of backing off. set_meta_values writes a whole batch on one read.
 """
 import asyncio
 
+from app.db import mirror
 from app.sheets.client import get_sheets_client, with_sheets_retry
 
 _KEY_RANGE = "meta!A2:A100"
@@ -55,6 +56,14 @@ def _set_meta_values_sync(access_token: str, sheet_id: str, values: dict[str, st
             valueInputOption="RAW",
             body={"values": additions},
         ).execute())
+
+    # Phase 2 dual-write, split the same way: existing keys are updates,
+    # new ones are appends, so the mirror lands on the same rows.
+    for k, v in values.items():
+        if k in row_of:
+            mirror.update(access_token, sheet_id, "meta", {"value": v}, key=k)
+    mirror.append(access_token, sheet_id, "meta",
+                  [{"key": k, "value": v} for k, v in additions])
 
 
 async def set_meta_values(access_token: str, sheet_id: str, values: dict[str, str]) -> None:

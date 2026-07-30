@@ -358,16 +358,30 @@ of the key columns per tab; on mismatch the file is discarded and the failure is
 loud. Hydrated rows are explicitly un-marked, since they came from the sheet and
 are not pending changes. Still nothing reads it.
 
-**Phase 2 — reads move to SQLite.** Behind the existing `app/sheets` facade, so
-call sites do not change. Reads are idempotent, so this is the low-risk half and
-can be verified by diffing against the sheet. Writes still go directly to
-Sheets.
+**Phase 2 — dual-write.** *(done — `app/db/mirror.py`, `app/db/verify.py`)*
+Every sheet write is also applied locally. Reads are untouched, so this phase
+cannot break anything a user sees, and it is the phase that produces evidence:
+run the app normally, then `python scripts/verify_mirror.py` diffs every tab
+cell for cell.
 
-*This phase alone kills the 200-row page, `loadAll`, the "This year" bug, and
-every read-side quota problem.*
+This corrects the original ordering, which had reads move first. That was
+wrong — reads served from a mirror nothing updates go stale on the first write.
+Dual-write has to come first.
 
-**Phase 3 — writes move to SQLite + the syncer.** Writes become local plus a
-dirty flag; the syncer becomes the only thing that writes to Sheets.
+Mirror failures are logged, not raised, **for this phase only**: the sheet is
+still authoritative, so a missed local write costs drift, which verify detects,
+and failing a user's save because the mirror hiccuped would be worse. That
+inverts the moment reads move over.
+
+**Phase 3 — reads move to SQLite.** Behind the existing `app/sheets` facade, so
+call sites do not change. Gate it on a clean `verify_mirror.py`. Mirror write
+failures become hard failures in the same change.
+
+*This phase kills the 200-row page, `loadAll`, the "This year" bug, and every
+read-side quota problem.*
+
+**Phase 3b — the syncer.** Direct sheet writes are replaced by the dirty-row
+push; Sheets stops being written synchronously at all.
 
 **Phase 4 — remove the scaffolding.** Delete the direct-write paths, the row
 index caches in `transactions.py` and `parsed_emails.py`, and the quota-driven

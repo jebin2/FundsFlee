@@ -1,6 +1,7 @@
 """Categories tab — port of src/lib/sheets/categories.ts."""
 import asyncio
 
+from app.db import mirror
 from app.sheets.client import get_sheets_client, with_sheets_retry
 
 
@@ -42,6 +43,12 @@ def _append_category_sync(access_token: str, sheet_id: str, cat: dict) -> None:
         body={"values": [[cat["id"], cat["name"], "", cat["color"], cat["icon"], "false", cat["created_at"]]]},
     ).execute())
 
+    mirror.append(access_token, sheet_id, "categories", [{
+        "id": cat["id"], "name": cat["name"], "parent_id": "",
+        "color": cat["color"], "icon": cat["icon"], "is_default": "false",
+        "created_at": cat["created_at"],
+    }])
+
 
 async def append_category(access_token: str, sheet_id: str, cat: dict) -> None:
     await asyncio.to_thread(_append_category_sync, access_token, sheet_id, cat)
@@ -63,6 +70,9 @@ def _delete_category_by_id_sync(access_token: str, sheet_id: str, cat_id: str) -
         valueInputOption="RAW",
         body={"values": [["", "", "", "", "", "", ""]]},
     ).execute())
+
+    # Blanked, not removed — the row keeps its position, in both stores.
+    mirror.blank_row(access_token, sheet_id, "categories", row_index + 2)
 
 
 async def delete_category_by_id(access_token: str, sheet_id: str, cat_id: str) -> None:

@@ -15,6 +15,7 @@ import asyncio
 from googleapiclient.errors import HttpError
 
 from app.core.dates import now_iso
+from app.db import mirror
 from app.sheets.client import get_sheets_client
 from app.sheets.headers import ITEM_SUGGESTIONS_HEADERS
 
@@ -120,6 +121,12 @@ async def append_item_suggestions(
             ]},
         ).execute()
 
+        mirror.append(access_token, sheet_id, "item_suggestions", [{
+            "key": s["key"], "field": s["field"], "current_val": s["current_val"],
+            "suggested": s["suggested"], "source": s["source"],
+            "status": "pending", "updated_at": now,
+        } for s in to_add])
+
     await asyncio.to_thread(work)
 
 
@@ -134,11 +141,15 @@ async def resolve_item_suggestion(
         )
         if idx < 0:
             return
+        now = now_iso()
         sheets.spreadsheets().values().update(
             spreadsheetId=sheet_id,
             range=f"item_suggestions!F{idx + 2}:G{idx + 2}",
             valueInputOption="RAW",
-            body={"values": [[status, now_iso()]]},
+            body={"values": [[status, now]]},
         ).execute()
+
+        mirror.update(access_token, sheet_id, "item_suggestions",
+                      {"status": status, "updated_at": now}, key=key, field=field)
 
     await asyncio.to_thread(work)

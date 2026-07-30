@@ -189,16 +189,20 @@ def is_deleted_row(r: list) -> bool:
     return at(idx("deleted")) == "TRUE" or at(idx("notes")) == "__DELETED__"
 
 
-def transaction_update_to_cells(
-    updates: dict, row_number: int, now: str | None = None
-) -> list[dict]:
-    """Build batchUpdate cell writes for a partial update.
-    id and created_at are immutable; updated_at is always written."""
+def transaction_update_to_fields(updates: dict, now: str | None = None) -> dict:
+    """Normalise a partial update into {column: cell value}.
+
+    Split out from transaction_update_to_cells so the sheet write and the local
+    mirror are built from one normalisation rather than two that can disagree
+    about booleans, tags or the updated_at timestamp.
+
+    id and created_at are immutable; updated_at is always written.
+    """
     if now is None:
         now = now_iso()
 
-    result: list[dict] = []
-    for key, (_, col_letter) in COLS.items():
+    fields: dict = {}
+    for key in COLS:
         if key in ("id", "created_at"):
             continue
         if key in updates or key == "updated_at":
@@ -209,8 +213,19 @@ def transaction_update_to_cells(
                 val = "TRUE" if val else ""
             if key == "tags" and isinstance(val, list):
                 val = ",".join(val)
-            result.append({
-                "range": f"transactions!{col_letter}{row_number}",
-                "values": [[val if val is not None else ""]],
-            })
-    return result
+            fields[key] = val if val is not None else ""
+    return fields
+
+
+def fields_to_cells(fields: dict, row_number: int) -> list[dict]:
+    return [
+        {"range": f"transactions!{COLS[key][1]}{row_number}", "values": [[val]]}
+        for key, val in fields.items()
+    ]
+
+
+def transaction_update_to_cells(
+    updates: dict, row_number: int, now: str | None = None
+) -> list[dict]:
+    """Build batchUpdate cell writes for a partial update."""
+    return fields_to_cells(transaction_update_to_fields(updates, now), row_number)

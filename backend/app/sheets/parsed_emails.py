@@ -10,6 +10,8 @@ from typing import TypedDict
 
 from googleapiclient.errors import HttpError
 
+from app.db import mirror
+from app.db.registry import PARSED_EMAILS_HEADERS
 from app.sheets.client import get_sheets_client, with_sheets_retry
 from app.sheets.migrations import ensure_parsed_emails_tab_sync
 
@@ -169,6 +171,8 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
         # Upsert, because a failed email is retried on the next run: appending
         # would leave a second row for the same message and quietly inflate the
         # scanned/failed counts in settings.
+        record_fields = dict(zip(PARSED_EMAILS_HEADERS, row))
+
         existing_row = _row_number_of(sheets, sheet_id, record["emailId"])
         if existing_row is not None:
             with_sheets_retry(lambda: sheets.spreadsheets().values().update(
@@ -177,6 +181,8 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
                 valueInputOption="RAW",
                 body={"values": [row]},
             ).execute())
+            mirror.update_row(access_token, sheet_id, "parsed_emails",
+                              existing_row, record_fields)
             return
 
         res = with_sheets_retry(lambda: sheets.spreadsheets().values().append(
@@ -185,6 +191,8 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
             valueInputOption="RAW",
             body={"values": [row]},
         ).execute())
+
+        mirror.append(access_token, sheet_id, "parsed_emails", [record_fields])
 
         landed = _appended_row_number(res)
         if landed is not None:
