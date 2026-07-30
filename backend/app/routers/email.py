@@ -43,6 +43,7 @@ async def email_status(session: SheetSession = Depends(require_session)) -> dict
         **status,
         "emailsScanned": stats["total"],
         "emailsParsed": stats["parsed"],
+        "emailsPartial": stats["partial"],
         "emailsSkipped": stats["skipped"],
         "emailsFailed": stats["failed"],
     }

@@ -14,6 +14,7 @@ interface EmailStatus {
   totalTxImported: number;
   emailsScanned: number;
   emailsParsed: number;
+  emailsPartial: number;
   emailsSkipped: number;
   runningAt: string | null;
   attachments: boolean;
@@ -355,6 +356,11 @@ export default function EmailImportSettingsPage() {
                       {status.emailsScanned} scanned · {status.emailsParsed} imported · {status.emailsSkipped} skipped
                     </p>
                   )}
+                  {!!status?.emailsPartial && (
+                    <p style={{ fontSize: 12, color: "var(--color-error)", marginTop: 2 }}>
+                      {status.emailsPartial} partly imported — some rows landed, the rest were lost
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -367,6 +373,11 @@ export default function EmailImportSettingsPage() {
                 <p style={{ fontSize: 13, color: "var(--color-on-surface-variant)", marginTop: 4 }}>
                   {status.emailsScanned} scanned &nbsp;·&nbsp; {status.emailsParsed} imported &nbsp;·&nbsp; {status.emailsSkipped} skipped
                 </p>
+                {!!status.emailsPartial && (
+                  <p style={{ fontSize: 12, color: "var(--color-error)", marginTop: 4 }}>
+                    {status.emailsPartial} partly imported — some rows landed, the rest were lost
+                  </p>
+                )}
               </div>
             )}
 

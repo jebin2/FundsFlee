@@ -80,6 +80,21 @@ class TestWhatCountsAsHandled:
         fake.rows = [_row("", "parsed"), _row("a", "parsed")]
         assert asyncio.run(mod.get_processed_email_ids("tok", "sheet")) == {"a"}
 
+    def test_partial_is_terminal(self, fake):
+        # Some groups wrote rows. Retrying would import those a second time and
+        # the duplicate scan only flags duplicates, so this must not come back.
+        fake.rows = [_row("a", "partial")]
+        assert asyncio.run(mod.get_processed_email_ids("tok", "sheet")) == {"a"}
+
+
+class TestStatuses:
+    def test_statuses_are_returned_per_id(self, fake):
+        # The job needs the previous status, not just membership, to tell a
+        # first ai_null from one that has already been retried.
+        fake.rows = [_row("a", "parsed"), _row("b", "failed")]
+        assert asyncio.run(mod.get_email_statuses("tok", "sheet")) == {
+            "a": "parsed", "b": "failed"}
+
 
 class TestOneRowPerMessage:
     def test_a_new_message_appends(self, fake):

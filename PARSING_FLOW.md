@@ -132,6 +132,32 @@ the very originals they duplicate. The +/-3 day widening covers cards, where a
 bank alert carries the transaction date but the statement carries the posting
 date.
 
+## 6. What the email import revisits
+
+Gmail is listed with `nextPageToken` followed to the end, capped at
+`MAX_MESSAGES_PER_RUN`, then **reversed** — Gmail returns newest-first, so the
+unprocessed backlog is at the end. Without the reverse, a run re-walks the newest
+page and never reaches older mail.
+
+Every message ends with one row in `parsed_emails`. Only `failed` is retried:
+
+| status | meaning | next run |
+|---|---|---|
+| `parsed` | rows written, no group errored | terminal |
+| `partial` | rows written, some group errored | terminal, logged as an error |
+| `skipped` | a real verdict — no debit, guard rejected it | terminal |
+| `failed` | nothing written, and a group errored | retried |
+
+The dividing line is **whether rows were written**, not whether something went
+wrong. A retry re-imports every group, and the duplicate scan only *flags*
+duplicates, so retrying a partially-imported message would leave real duplicate
+rows behind. That case is therefore made loud rather than repeated.
+
+`parse_error` (the AI chain raised) always counts as retryable. `ai_null` is
+ambiguous — usually the model correctly reporting no debit, occasionally a
+non-JSON response — so it is retried exactly once, which distinguishes the two
+without looping forever on marketing email.
+
 ## Where paths still differ, and why
 
 **Placeholders.** Receipt, PDF and text create a queued row first, so progress is

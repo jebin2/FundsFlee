@@ -1,7 +1,7 @@
 """parsed_emails tab — port of src/lib/sheets/parsedEmails.ts.
 
 Columns: email_id | from | subject | parsed_at | status | tx_ids
-status: "parsed" | "skipped" | "failed"
+status: "parsed" | "partial" | "skipped" | "failed"
 tx_ids: comma-separated transaction IDs (empty for skipped/failed)
 """
 import asyncio
@@ -42,25 +42,34 @@ def _get_all_rows_sync(sheets, sheet_id: str) -> list[list]:
         return []
 
 
-# Load ALL processed email IDs into a set — call ONCE per job run,
-# then check membership in memory instead of hitting the Sheets API per email.
-async def get_processed_email_ids(access_token: str, sheet_id: str) -> set[str]:
-    """Ids the import should not look at again.
+# Statuses the import will look at again on the next run. A failure means the
+# AI chain was unreachable or returned nothing usable — a transient condition —
+# and treating it as final meant one bad minute lost that email permanently,
+# with the only recovery being to delete its row from the sheet by hand.
+#
+# "parsed", "partial" and "skipped" are real verdicts and stay terminal. Note
+# that retrying is only safe because a message reaching "failed" wrote no rows;
+# see the partial-failure handling in the import job.
+RETRYABLE_STATUSES = {"failed"}
 
-    "failed" is deliberately excluded. A failure here means the AI chain was
-    unreachable or returned nothing usable — a transient condition — and
-    treating it as final meant one bad minute lost that email permanently, with
-    the only recovery being to delete its row from the sheet by hand. "parsed"
-    and "skipped" are real verdicts and stay terminal.
-    """
+
+# Load ALL recorded email statuses — call ONCE per job run, then check in
+# memory instead of hitting the Sheets API per email.
+async def get_email_statuses(access_token: str, sheet_id: str) -> dict[str, str]:
     def work():
         sheets = get_sheets_client(access_token)
         rows = _get_all_rows_sync(sheets, sheet_id)
         return {
-            _at(r, COLS["email_id"]) for r in rows
-            if _at(r, COLS["email_id"]) and _at(r, COLS["status"]) != "failed"
+            _at(r, COLS["email_id"]): _at(r, COLS["status"])
+            for r in rows if _at(r, COLS["email_id"])
         }
     return await asyncio.to_thread(work)
+
+
+# Ids the import should not look at again.
+async def get_processed_email_ids(access_token: str, sheet_id: str) -> set[str]:
+    statuses = await get_email_statuses(access_token, sheet_id)
+    return {mid for mid, st in statuses.items() if st not in RETRYABLE_STATUSES}
 
 
 # Returns True if this email has already been processed (any status).
@@ -118,6 +127,7 @@ async def get_parsed_email_stats(access_token: str, sheet_id: str) -> dict:
         return {
             "total": len(rows),
             "parsed": sum(1 for r in rows if _at(r, status_at) == "parsed"),
+            "partial": sum(1 for r in rows if _at(r, status_at) == "partial"),
             "skipped": sum(1 for r in rows if _at(r, status_at) == "skipped"),
             "failed": sum(1 for r in rows if _at(r, status_at) == "failed"),
         }

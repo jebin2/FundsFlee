@@ -19,6 +19,7 @@ from app.sheets.meta import get_meta_values, set_meta_value, set_meta_values
 from app.sheets.parsed_emails import (
     check_email_parsed,
     get_parsed_email_stats,
+    get_email_statuses,
     get_processed_email_ids,
     record_parsed_email,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "get_meta_values",
     "get_or_create_receipts_folder",
     "get_parsed_email_stats",
+    "get_email_statuses",
     "get_processed_email_ids",
     "get_transaction_by_id",
     "get_transactions",
