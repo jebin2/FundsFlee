@@ -6,6 +6,7 @@ from typing import TypedDict
 from googleapiclient.errors import HttpError
 
 from app.db import mirror
+from app.db.repo import ROW_FIELD
 from app.db.registry import EXPECTED_HEADERS
 from app.sheets.client import get_sheets_client, with_sheets_retry
 from app.sheets.migrations import (
@@ -27,16 +28,14 @@ PAGE_SIZE = 200
 # Invalidated on append (new row not in cache) and on soft-delete (row IDs shift
 # logically). Existing row numbers for un-deleted rows remain valid across appends.
 def _row_number_of(access_token: str, sheet_id: str, tx_id: str) -> int | None:
-    """Sheet row holding this id.
+    """Sheet row holding this id, via the key index.
 
     The cache this replaces existed because every lookup was an API read of the
-    whole id column. Locally it is a scan of rows already in memory, so there is
-    nothing to cache and nothing to invalidate.
+    whole id column. Locally it is an indexed lookup, so there is nothing to
+    cache and nothing to invalidate.
     """
-    for i, r in enumerate(mirror.rows(access_token, sheet_id, "transactions")):
-        if r and r[0] == tx_id:
-            return i + 2  # +2: 1-indexed plus the header row
-    return None
+    found = mirror.find(access_token, sheet_id, "transactions", id=tx_id)
+    return found[ROW_FIELD] if found else None
 
 
 class TransactionPage(TypedDict):

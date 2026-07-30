@@ -2,6 +2,7 @@
 import asyncio
 
 from app.db import mirror
+from app.db.repo import ROW_FIELD
 from app.sheets.client import get_sheets_client, with_sheets_retry
 
 
@@ -52,10 +53,10 @@ async def append_category(access_token: str, sheet_id: str, cat: dict) -> None:
 
 def _delete_category_by_id_sync(access_token: str, sheet_id: str, cat_id: str) -> None:
     sheets = get_sheets_client(access_token)
-    rows = mirror.rows(access_token, sheet_id, "categories")
-    row_index = next((i for i, r in enumerate(rows) if r and r[0] == cat_id), -1)
-    if row_index < 0:
+    found = mirror.find(access_token, sheet_id, "categories", id=cat_id)
+    if not found:
         return
+    row_index = found[ROW_FIELD] - 2
     # Clear the name to soft-delete (row stays but is filtered out on read)
     with_sheets_retry(lambda: sheets.spreadsheets().values().update(
         spreadsheetId=sheet_id,

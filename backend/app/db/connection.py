@@ -58,6 +58,11 @@ def connect(sheet_id: str) -> sqlite3.Connection:
 
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # A second writer should wait its turn rather than raise SQLITE_BUSY. One
+    # uvicorn worker makes contention rare, but a background job writing while
+    # a request writes is exactly the case that would otherwise surface as a
+    # failed save.
+    conn.execute("PRAGMA busy_timeout=5000")
 
     # Keyed by path, not sheet id: the same id under a different directory is a
     # different database, which is exactly what the tests do.

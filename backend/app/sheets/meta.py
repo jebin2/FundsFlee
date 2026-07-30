@@ -10,7 +10,6 @@ import asyncio
 from app.db import mirror
 from app.sheets.client import get_sheets_client, with_sheets_retry
 
-_KEY_RANGE = "meta!A2:A100"
 
 
 def _get_meta_values_sync(access_token: str, sheet_id: str) -> dict[str, str]:

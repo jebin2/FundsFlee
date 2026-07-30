@@ -9,10 +9,10 @@ import asyncio
 from typing import TypedDict
 
 from app.db import mirror
+from app.db.repo import ROW_FIELD
 from app.db.registry import PARSED_EMAILS_HEADERS
 from app.sheets.client import get_sheets_client, with_sheets_retry
 
-RANGE = "parsed_emails!A2:G"
 COLS = {"email_id": 0, "from": 1, "subject": 2, "parsed_at": 3, "status": 4,
         "tx_ids": 5, "attempts": 6}
 LAST_COL = "G"
@@ -73,13 +73,6 @@ def _get_all_rows_sync(access_token: str, sheet_id: str) -> list[list]:
     return mirror.rows(access_token, sheet_id, "parsed_emails")
 
 
-def _index_from_rows(rows: list[list]) -> dict[str, int]:
-    return {
-        _at(r, COLS["email_id"]): i + 2   # +2: 1-indexed plus the header row
-        for i, r in enumerate(rows) if _at(r, COLS["email_id"])
-    }
-
-
 # Load ALL recorded state — call ONCE per job run, then check in memory instead
 # of hitting the Sheets API per email. Also seeds the row-index cache.
 async def get_email_states(access_token: str, sheet_id: str) -> dict[str, EmailState]:
@@ -112,8 +105,10 @@ async def check_email_parsed(access_token: str, sheet_id: str, email_id: str) ->
 
 
 def _row_number_of(access_token: str, sheet_id: str, email_id: str) -> int | None:
-    rows = _get_all_rows_sync(access_token, sheet_id)
-    return _index_from_rows(rows).get(email_id)
+    """Indexed, not a scan: this runs once per message, against a tab that
+    grows with every message, so a scan here is quadratic over a long import."""
+    found = mirror.find(access_token, sheet_id, "parsed_emails", email_id=email_id)
+    return found[ROW_FIELD] if found else None
 
 
 # Write a processing result for one email.

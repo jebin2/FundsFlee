@@ -46,12 +46,6 @@ COLS: dict[str, tuple[int, str]] = {
 
 NUM_COLS = len(COLS)
 LAST_COL = COLS["merge_id"][1]
-# Open-ended: a fixed ceiling made edits past that row silently no-op.
-ID_RANGE = "transactions!A2:A"
-
-
-def DATA_RANGE(limit: int) -> str:
-    return f"transactions!A2:{LAST_COL}{limit + 1}"
 
 
 def idx(field: str) -> int:
