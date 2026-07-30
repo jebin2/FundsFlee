@@ -23,6 +23,15 @@ interface EmailStatus {
 
 type JobState = "idle" | "running" | "done";
 
+// Each poll costs two sheet reads, against a 60-reads-per-minute quota that the
+// running import is also drawing on — at 5s this was 24 of them a minute, spent
+// competing with the work it was watching.
+const POLL_MS = 15000;
+
+// Runs walk the whole backlog now and can last well over the old five-minute
+// ceiling, which used to drop the UI back to idle mid-import.
+const POLL_MAX_TICKS = 240;   // an hour
+
 export default function EmailImportSettingsPage() {
   const [loading,      setLoading]      = useState(true);
   const [jobState,     setJobState]     = useState<JobState>("idle");
@@ -58,14 +67,16 @@ export default function EmailImportSettingsPage() {
       setDaysBack(data.daysBack);
       setDaysInput(String(data.daysBack));
       setAttachments(data.attachments);
-      if (data.runningAt && Date.now() - new Date(data.runningAt).getTime() < 5 * 60 * 1000) {
+      // The server drops an abandoned lock, so a value here means a run is
+      // genuinely in flight — no age check needed on this side.
+      if (data.runningAt) {
         setJobState("running");
         startPolling(async (_, stop) => {
           const d = await loadStatus();
           if (!d) return;
           setStatus(d);
           if (!d.runningAt) { stop(); setJobState("done"); setTimeout(() => setJobState("idle"), 5000); }
-        }, 5000, 60, () => setJobState("idle"));
+        }, POLL_MS, POLL_MAX_TICKS, () => setJobState("idle"));
       }
     }
     setLoading(false);
@@ -176,7 +187,7 @@ export default function EmailImportSettingsPage() {
         if (!d) return;
         setStatus(d);
         if (!d.runningAt) { stop(); setJobState("done"); setTimeout(() => setJobState("idle"), 5000); }
-      }, 5000, 60, () => setJobState("idle"));
+      }, POLL_MS, POLL_MAX_TICKS, () => setJobState("idle"));
     } catch {
       setJobState("idle");
       setError("Network error — could not start fetch.");

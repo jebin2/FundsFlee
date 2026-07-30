@@ -3,6 +3,7 @@ accident, so it gets a test. Unset must mean ON: a forwarded batch or an emailed
 statement carries everything in its attachments, and with the flag off those
 emails can only ever be skipped as too_short."""
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import app.email_import.config as config_mod
@@ -75,3 +76,33 @@ class TestSaving:
         written = self._capture(monkeypatch)
         asyncio.run(service_mod.save_email_import_config(SESSION, {"daysBack": 14}))
         assert "email_import_attachments" not in written
+
+
+class TestAnAbandonedLock:
+    """The lock is cleared in a finally block, which does not run when the
+    process is killed mid-import. The job applied an age rule and the status
+    endpoint did not, so a restart left the UI saying "Scanning emails…"
+    forever."""
+
+    def _ago(self, seconds):
+        return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+    def test_a_fresh_lock_is_reported(self):
+        started = self._ago(30)
+        assert config_mod.active_running_at(started) == started
+
+    def test_a_stale_lock_reads_as_not_running(self):
+        assert config_mod.active_running_at(self._ago(config_mod.LOCK_STALE_SECONDS + 1)) is None
+
+    def test_no_lock_is_not_running(self):
+        assert config_mod.active_running_at(None) is None
+        assert config_mod.active_running_at("") is None
+
+    def test_an_unparseable_lock_does_not_wedge_the_ui(self):
+        assert config_mod.active_running_at("not a date") is None
+
+    def test_a_z_suffixed_timestamp_is_understood(self):
+        # now_iso() writes this form; treating it as unparseable would report
+        # every run as finished the moment it started.
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+        assert config_mod.active_running_at(stamp) == stamp

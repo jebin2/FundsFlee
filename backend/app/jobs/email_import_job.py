@@ -138,11 +138,11 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
     if len(config["fromContains"]) == 0 and len(config["subjectContains"]) == 0:
         return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
+    # read_email_import_config already drops an abandoned lock, so a value here
+    # means a run really is in flight.
     if config["runningAt"]:
-        age_ms = (datetime.now(timezone.utc) - datetime.fromisoformat(config["runningAt"].replace("Z", "+00:00"))).total_seconds() * 1000
-        if age_ms < 5 * 60 * 1000:
-            log.warn("email", "already running — skipping")
-            return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
+        log.warn("email", "already running — skipping")
+        return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
     await _set_meta_safe(session, "email_import_running_at", now_iso())
     last_lock_refresh = time.monotonic()

@@ -6,6 +6,7 @@ from app.core.deps import SheetSession
 from app.core.logger import log
 from app.core.numbers import js_parse_int
 from app.core.safe_json import safe_json_parse
+from app.email_import.config import active_running_at
 from app.sheets import get_meta_values, set_meta_values
 
 
@@ -38,7 +39,7 @@ async def get_email_import_status(session: SheetSession) -> dict:
         "attachments": meta.get("email_import_attachments") != "0",
         "lastRun": meta.get("email_import_last_run") or None,
         "totalTxImported": js_parse_int(meta.get("email_import_tx_count"), 0) or 0,
-        "runningAt": meta.get("email_import_running_at") or None,
+        "runningAt": active_running_at(meta.get("email_import_running_at")),
     }
 
 
