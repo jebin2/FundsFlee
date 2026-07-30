@@ -14,11 +14,7 @@ _KEY_RANGE = "meta!A2:A100"
 
 
 def _get_meta_values_sync(access_token: str, sheet_id: str) -> dict[str, str]:
-    sheets = get_sheets_client(access_token)
-    res = with_sheets_retry(lambda: sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="meta!A2:B100"
-    ).execute())
-    rows = res.get("values") or []
+    rows = mirror.rows(access_token, sheet_id, "meta")
     return {r[0]: (r[1] if len(r) > 1 and r[1] is not None else "") for r in rows if r and r[0]}
 
 
@@ -31,10 +27,9 @@ def _set_meta_values_sync(access_token: str, sheet_id: str, values: dict[str, st
         return
     sheets = get_sheets_client(access_token)
 
-    res = with_sheets_retry(lambda: sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range=_KEY_RANGE
-    ).execute())
-    rows = res.get("values") or []
+    # Which keys already have a row, and where. Reading this locally is the
+    # whole point: it used to cost a Sheets read on every settings save.
+    rows = mirror.rows(access_token, sheet_id, "meta")
     row_of = {r[0]: i + 2 for i, r in enumerate(rows) if r and r[0]}
 
     updates = [

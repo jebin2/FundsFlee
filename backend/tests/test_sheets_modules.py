@@ -6,7 +6,7 @@ import pytest
 
 import app.sheets.transactions as transactions_mod
 import app.sheets.meta as meta_mod
-from app.sheets.transaction_schema import ID_RANGE, LAST_COL, idx, transaction_to_row
+from app.sheets.transaction_schema import idx, transaction_to_row
 from tests.test_transaction_schema import BASE_TX
 
 
@@ -65,7 +65,6 @@ def fake(monkeypatch):
     # ensure_transaction_schema memo: mark the test sheet as already checked
     monkeypatch.setattr(transactions_mod, "ensure_transaction_schema_sync", lambda s, sid: None)
     monkeypatch.setattr(transactions_mod, "ensure_date_column_format_sync", lambda s, sid: None)
-    transactions_mod._row_index_cache.clear()
     return fake
 
 
@@ -74,64 +73,76 @@ def tx_row(tx_id: str, deleted: bool = False) -> list:
 
 
 class TestGetTransactions:
-    def test_pagination_reads_last_rows_first(self, fake):
-        # 5 physical rows, page_size 2 → page 1 reads rows 5..6 (A5:AA6)
-        ids = [["t1"], ["t2"], ["t3"], ["t4"], ["t5"]]
-        fake.batch_get_response = [[["t1", "t2", "t3", "t4", "t5"]], [["", "", "", "", ""]]]
-        fake.get_responses[f"transactions!A5:{LAST_COL}6"] = [tx_row("t4"), tx_row("t5")]
+    def test_pagination_returns_the_last_rows_first(self, fake, seed):
+        # 5 physical rows, page_size 2 -> page 1 is rows 5..6, the newest.
+        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 6)])
 
         page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 2))
         assert [t["id"] for t in page["transactions"]] == ["t4", "t5"]
         assert page["total"] == 5
         assert page["hasMore"] is True
-        assert ("get", f"transactions!A5:{LAST_COL}6") in fake.calls
 
-    def test_last_page_clamps_to_row_2_and_has_more_false(self, fake):
-        fake.batch_get_response = [[["t1", "t2", "t3"]], [[]]]
-        fake.get_responses[f"transactions!A2:{LAST_COL}2"] = [tx_row("t1")]
+    def test_it_costs_no_api_call(self, fake, seed):
+        # The whole point of the move: paging used to be a batchGet plus a
+        # ranged read, every time.
+        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 6)])
+        asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 2))
+        assert fake.calls == []
+
+    def test_last_page_clamps_to_row_2_and_has_more_false(self, fake, seed):
+        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 4)])
 
         page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 2, 2))
         assert [t["id"] for t in page["transactions"]] == ["t1"]
         assert page["hasMore"] is False
 
-    def test_deleted_rows_excluded_from_results_and_total(self, fake):
-        fake.batch_get_response = [[["t1", "t2"]], [["", "TRUE"]]]
-        fake.get_responses[f"transactions!A2:{LAST_COL}3"] = [tx_row("t1"), tx_row("t2", deleted=True)]
+    def test_deleted_rows_excluded_from_results_and_total(self, fake, seed):
+        seed("sheet", "transactions", [tx_row("t1"), tx_row("t2", deleted=True)])
 
         page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 200))
         assert [t["id"] for t in page["transactions"]] == ["t1"]
         assert page["total"] == 1  # visible count, not physical
 
+    def test_a_deleted_row_still_occupies_its_page_slot(self, fake, seed):
+        # Page boundaries are physical rows, so a soft-deleted row is filtered
+        # after slicing, not before. Otherwise pages would silently overlap.
+        seed("sheet", "transactions",
+             [tx_row("t1"), tx_row("t2", deleted=True), tx_row("t3")])
+
+        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 2))
+        assert [t["id"] for t in page["transactions"]] == ["t3"]
+        assert page["hasMore"] is True
+
     def test_empty_sheet(self, fake):
-        fake.batch_get_response = [[[]], [[]]]
         page = asyncio.run(transactions_mod.get_transactions("tok", "sheet"))
         assert page == {"transactions": [], "total": 0, "hasMore": False}
 
 
 class TestUpdateTransactionField:
-    def test_writes_batch_update_at_cached_row(self, fake):
-        fake.get_responses[ID_RANGE] = [["t1"], ["t2"], ["t3"]]
+    def test_writes_batch_update_at_the_right_row(self, fake, seed):
+        seed("sheet", "transactions", [["t1"], ["t2"], ["t3"]])
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "t2", {"merchant": "Zomato"}))
 
         batch = next(c for c in fake.calls if c[0] == "batchUpdate")
         ranges = [d["range"] for d in batch[1]["data"]]
-        assert f"transactions!G3" in ranges        # merchant col G, row 3 (t2)
+        assert "transactions!G3" in ranges        # merchant col G, row 3 (t2)
         assert any(r.startswith("transactions!T") for r in ranges)  # updated_at
 
-    def test_unknown_id_is_noop(self, fake):
-        fake.get_responses[ID_RANGE] = [["t1"]]
+    def test_unknown_id_is_noop(self, fake, seed):
+        seed("sheet", "transactions", [["t1"]])
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "missing", {"merchant": "X"}))
         assert not any(c[0] == "batchUpdate" for c in fake.calls)
 
-    def test_soft_delete_invalidates_row_cache(self, fake):
-        fake.get_responses[ID_RANGE] = [["t1"]]
+    def test_a_soft_delete_reaches_the_mirror(self, fake, seed):
+        seed("sheet", "transactions", [["t1"]])
         asyncio.run(transactions_mod.update_transaction_field("tok", "sheet", "t1", {"deleted": True}))
-        assert "sheet" not in transactions_mod._row_index_cache
+        row = asyncio.run(transactions_mod.get_transaction_by_id("tok", "sheet", "t1"))
+        assert row is None      # filtered out as deleted
 
-    def test_append_invalidates_row_cache(self, fake):
-        transactions_mod._row_index_cache["sheet"] = {"t1": 2}
+    def test_an_append_reaches_the_mirror(self, fake):
         asyncio.run(transactions_mod.append_transaction("tok", "sheet", dict(BASE_TX)))
-        assert "sheet" not in transactions_mod._row_index_cache
+        rows = asyncio.run(transactions_mod.get_all_transactions("tok", "sheet"))
+        assert [r["id"] for r in rows] == [BASE_TX["id"]]
         append = next(c for c in fake.calls if c[0] == "append")
         assert append[1] == "transactions!A2"
         assert append[2]["values"][0][idx("id")] == "tx-001"
@@ -179,8 +190,8 @@ class TestDateCells:
         asyncio.run(transactions_mod.append_transactions("tok", "sheet", [dict(BASE_TX)]))
         assert [c for c in fake.calls if c[0] == "update" and c[1].startswith("transactions!B")] == []
 
-    def test_editing_a_date_keeps_it_a_date(self, fake):
-        transactions_mod._row_index_cache["sheet"] = {"t1": 7}
+    def test_editing_a_date_keeps_it_a_date(self, fake, seed):
+        seed("sheet", "transactions", [[f"pad{i}"] for i in range(5)] + [["t1"]])
         asyncio.run(transactions_mod.update_transaction_field(
             "tok", "sheet", "t1", {"date": "2026-08-01", "merchant": "Swiggy"}))
 
@@ -194,8 +205,8 @@ class TestDateCells:
         raw = next(b for b in batches if b[1]["valueInputOption"] == "RAW")
         assert all(not d["range"].startswith("transactions!B") for d in raw[1]["data"])
 
-    def test_an_edit_without_a_date_stays_a_single_raw_write(self, fake):
-        transactions_mod._row_index_cache["sheet"] = {"t1": 7}
+    def test_an_edit_without_a_date_stays_a_single_raw_write(self, fake, seed):
+        seed("sheet", "transactions", [[f"pad{i}"] for i in range(5)] + [["t1"]])
         asyncio.run(transactions_mod.update_transaction_field(
             "tok", "sheet", "t1", {"merchant": "Swiggy"}))
         batches = [c for c in fake.calls if c[0] == "batchUpdate"]
@@ -204,32 +215,34 @@ class TestDateCells:
 
 
 class TestMeta:
-    def test_get_meta_values_parses_pairs(self, fake):
-        fake.get_responses["meta!A2:B100"] = [["region", "IN"], ["empty_val"], [], ["", "x"]]
+    def test_get_meta_values_parses_pairs(self, fake, seed):
+        # Reads come from the mirror now; the sheet is written to, not read.
+        seed("sheet", "meta", [["region", "IN"], ["empty_val"], [], ["", "x"]])
         meta = asyncio.run(meta_mod.get_meta_values("tok", "sheet"))
         assert meta == {"region": "IN", "empty_val": ""}
 
-    def test_set_meta_value_updates_existing_row(self, fake):
-        fake.get_responses["meta!A2:A100"] = [["region"], ["name"]]
+    def test_set_meta_value_updates_existing_row(self, fake, seed):
+        seed("sheet", "meta", [["region"], ["name"]])
         asyncio.run(meta_mod.set_meta_value("tok", "sheet", "name", "Jebin"))
         batch = next(c for c in fake.calls if c[0] == "batchUpdate")
         assert batch[1]["data"] == [{"range": "meta!B3", "values": [["Jebin"]]}]
 
-    def test_many_keys_cost_one_read(self, fake):
+    def test_many_keys_cost_no_reads(self, fake, seed):
         # Each key used to read meta!A2:A100 for itself, so saving four
-        # settings was four reads against a 60-per-minute quota.
-        fake.get_responses["meta!A2:A100"] = [["region"], ["name"]]
+        # settings was four reads against a 60-per-minute quota. It is now
+        # zero: the row positions come from the mirror.
+        seed("sheet", "meta", [["region"], ["name"]])
         asyncio.run(meta_mod.set_meta_values("tok", "sheet", {"region": "IN", "name": "J"}))
 
-        assert len([c for c in fake.calls if c[0] == "get"]) == 1
+        assert [c for c in fake.calls if c[0] == "get"] == []
         batch = next(c for c in fake.calls if c[0] == "batchUpdate")
         assert batch[1]["data"] == [
             {"range": "meta!B2", "values": [["IN"]]},
             {"range": "meta!B3", "values": [["J"]]},
         ]
 
-    def test_a_mixed_batch_updates_and_appends(self, fake):
-        fake.get_responses["meta!A2:A100"] = [["region"]]
+    def test_a_mixed_batch_updates_and_appends(self, fake, seed):
+        seed("sheet", "meta", [["region"]])
         asyncio.run(meta_mod.set_meta_values("tok", "sheet", {"region": "IN", "fresh": "v"}))
         assert next(c for c in fake.calls if c[0] == "batchUpdate")[1]["data"] == [
             {"range": "meta!B2", "values": [["IN"]]}]
@@ -239,8 +252,8 @@ class TestMeta:
         asyncio.run(meta_mod.set_meta_values("tok", "sheet", {}))
         assert fake.calls == []
 
-    def test_set_meta_value_appends_new_key(self, fake):
-        fake.get_responses["meta!A2:A100"] = [["region"]]
+    def test_set_meta_value_appends_new_key(self, fake, seed):
+        seed("sheet", "meta", [["region"]])
         asyncio.run(meta_mod.set_meta_value("tok", "sheet", "new_key", "v"))
         append = next(c for c in fake.calls if c[0] == "append")
         assert append[1] == "meta!A2"

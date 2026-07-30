@@ -1,20 +1,20 @@
-"""Dual-write: every sheet write is also applied locally.
+"""The local mirror: every read, and the local half of every write.
 
-Phase 2. The sheet is still authoritative and still serves every read — this
-only keeps the local mirror in step, so that Phase 3 can flip reads over to it
-with evidence rather than hope.
+Phase 3. Reads are served from here; writes still go to the sheet as well, so
+the two stores stay identical and the syncer can take over in 3b.
 
-The plan originally had Phase 2 flip reads first and leave writes going straight
-to Sheets. That is wrong: reads served from a mirror nothing updates go stale on
-the first write. Dual-write has to come first, and it is also the phase that can
-be verified — run the app normally, then diff the mirror against the sheet.
+`rows()` returns positional lists in sheet order — the exact shape
+values().get returns. That is deliberate: every sheets module already parses
+that shape, so moving a read off the API is a one-line change and nothing
+downstream has to be rewritten or retested.
 
-**Failures here are logged, not raised.** For this phase only. Sheets remains
-the source of truth, so a mirror that misses a write costs nothing except drift,
-which verify.py detects. The moment reads move over in Phase 3 that inverts, and
-these become hard failures.
+**Failures here are raised, not swallowed.** They were swallowed in phase 2,
+when the mirror served nothing and drift was merely detectable. Now that reads
+come from here, a missed write means the user is shown data that is missing
+their last change. Failing loudly is the honest outcome, and the row is still
+safe in the sheet.
 
-**Every function here must be called AFTER the sheet write has succeeded.** That
+**Write functions must be called AFTER the sheet write has succeeded.** That
 ordering is what makes the bootstrap correct: if the mirror does not exist yet,
 hydration reads a sheet that already contains this write, so the write must not
 then be applied a second time.
@@ -59,23 +59,41 @@ def forget(sheet_id: str) -> None:
 
 
 def _apply(access_token: str, sheet_id: str, tab: str, work) -> None:
+    if _ensure(access_token, sheet_id):
+        # The mirror was just built from the sheet, and the sheet already
+        # contains this write — it came first. Applying it again appends a
+        # duplicate row.
+        return
+    conn = connect(sheet_id)
     try:
-        if _ensure(access_token, sheet_id):
-            # The mirror was just built from the sheet, and the sheet already
-            # contains this write — it came first. Applying it again appends a
-            # duplicate row.
-            return
-        conn = connect(sheet_id)
-        try:
-            work(Repo(conn, spec(tab)))
-        finally:
-            conn.close()
-    except Exception as err:
-        # Deliberately swallowed — see the module docstring. Drift is detectable;
-        # a failed user write because the mirror hiccuped is not acceptable while
-        # the mirror serves nothing.
-        log.error("mirror", f"{tab}: local write failed, sheet is unaffected", err,
-                  {"sheetId": sheet_id})
+        work(Repo(conn, spec(tab)))
+    finally:
+        conn.close()
+
+
+def rows(access_token: str, sheet_id: str, tab: str) -> list[list[str]]:
+    """Every row, positionally, in sheet order — the shape values().get returns.
+
+    Index i is sheet row i + 2, so callers that used to compute a row number
+    from a list position keep working unchanged.
+    """
+    _ensure(access_token, sheet_id)
+    conn = connect(sheet_id)
+    try:
+        s = spec(tab)
+        return [s.to_row(r) for r in Repo(conn, s).all()]
+    finally:
+        conn.close()
+
+
+def records(access_token: str, sheet_id: str, tab: str) -> list[dict]:
+    """Rows as column-keyed dicts, each carrying its sheet row as _row."""
+    _ensure(access_token, sheet_id)
+    conn = connect(sheet_id)
+    try:
+        return Repo(conn, spec(tab)).all()
+    finally:
+        conn.close()
 
 
 def append(access_token: str, sheet_id: str, tab: str, records: list[dict]) -> None:
@@ -89,8 +107,8 @@ def update(access_token: str, sheet_id: str, tab: str, fields: dict, **key) -> N
         return
 
     def work(repo: Repo):
-        # A miss means the mirror does not have the row the sheet just updated,
-        # which is drift worth naming rather than passing over in silence.
+        # A miss means the mirror lacks the row the sheet just updated. Since
+        # the mirror now serves reads, that is a user-visible discrepancy.
         if repo.update(fields, **key) == 0:
             log.warn("mirror", f"{tab}: no local row for {key}", {"sheetId": sheet_id})
 

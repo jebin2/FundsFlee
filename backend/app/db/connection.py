@@ -22,6 +22,10 @@ DB_DIR = Path(settings.user_store_file).parent / "sheets"
 # no business becoming a path.
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
+# The DDL is idempotent but not free — two dozen statements. Once reads come
+# from the mirror, connect() runs on every query, so it is memoised per process.
+_schema_ready: set[str] = set()
+
 
 def mirror_path(sheet_id: str) -> Path:
     if not _SAFE_ID.match(sheet_id):
@@ -35,6 +39,7 @@ def discard_mirror(sheet_id: str) -> None:
     base = mirror_path(sheet_id)
     for suffix in ("", "-wal", "-shm"):
         base.with_name(base.name + suffix).unlink(missing_ok=True)
+    _schema_ready.discard(str(base))
 
 
 def mirror_exists(sheet_id: str) -> bool:
@@ -54,12 +59,16 @@ def connect(sheet_id: str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 
-    for stmt in mirror_ddl():
-        conn.execute(stmt)
-
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    # Keyed by path, not sheet id: the same id under a different directory is a
+    # different database, which is exactly what the tests do.
+    key = str(path)
+    if key not in _schema_ready:
+        for stmt in mirror_ddl():
+            conn.execute(stmt)
+        _schema_ready.add(key)
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
 
     return conn

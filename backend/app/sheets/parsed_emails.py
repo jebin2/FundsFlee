@@ -8,12 +8,9 @@ attempts: how many times the import has tried this message
 import asyncio
 from typing import TypedDict
 
-from googleapiclient.errors import HttpError
-
 from app.db import mirror
 from app.db.registry import PARSED_EMAILS_HEADERS
 from app.sheets.client import get_sheets_client, with_sheets_retry
-from app.sheets.migrations import ensure_parsed_emails_tab_sync
 
 RANGE = "parsed_emails!A2:G"
 COLS = {"email_id": 0, "from": 1, "subject": 2, "parsed_at": 3, "status": 4,
@@ -52,16 +49,6 @@ class ParsedEmailRecord(TypedDict):
     attempts: int
 
 
-# email_id -> sheet row number, per sheet. Seeded by get_email_states and kept
-# current by record_parsed_email, so a run does one read instead of one per
-# message. Mirrors _row_index_cache in transactions.py.
-_index_cache: dict[str, dict[str, int]] = {}
-
-
-def invalidate_index(sheet_id: str) -> None:
-    _index_cache.pop(sheet_id, None)
-
-
 def _at(r: list, i: int) -> str:
     return r[i] if i < len(r) and r[i] is not None else ""
 
@@ -73,26 +60,17 @@ def _int_at(r: list, i: int) -> int:
         return 0
 
 
-def _get_all_rows_sync(sheets, sheet_id: str) -> list[list]:
+def _get_all_rows_sync(access_token: str, sheet_id: str) -> list[list]:
     """Every recorded row, or a raise.
 
-    This used to swallow ANY exception and return [] as though the tab were
-    missing. An empty result here does not mean "nothing processed yet" to the
-    callers — it means "process everything again", so a single 429 would
-    reimport the whole backlog and duplicate every transaction in it. Only a
-    genuinely absent tab is handled; everything else propagates.
+    Local now, which also settles an old hazard: this used to swallow ANY
+    exception and return [] as though the tab were missing. An empty result
+    does not mean "nothing processed yet" to the callers — it means "process
+    everything again", so one 429 would reimport the whole backlog and
+    duplicate every transaction in it. A local read either succeeds or raises;
+    there is no ambiguous empty.
     """
-    try:
-        return with_sheets_retry(lambda: sheets.spreadsheets().values().get(
-            spreadsheetId=sheet_id, range=RANGE
-        ).execute()).get("values") or []
-    except HttpError as err:
-        msg = str(err)
-        if "Unable to parse range" in msg or "not found" in msg:
-            # Tab missing for users whose sheet predates this feature — create it
-            ensure_parsed_emails_tab_sync(sheets, sheet_id)
-            return []
-        raise
+    return mirror.rows(access_token, sheet_id, "parsed_emails")
 
 
 def _index_from_rows(rows: list[list]) -> dict[str, int]:
@@ -106,9 +84,7 @@ def _index_from_rows(rows: list[list]) -> dict[str, int]:
 # of hitting the Sheets API per email. Also seeds the row-index cache.
 async def get_email_states(access_token: str, sheet_id: str) -> dict[str, EmailState]:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = _get_all_rows_sync(sheets, sheet_id)
-        _index_cache[sheet_id] = _index_from_rows(rows)
+        rows = _get_all_rows_sync(access_token, sheet_id)
         return {
             _at(r, COLS["email_id"]): EmailState(
                 status=_at(r, COLS["status"]),
@@ -130,28 +106,14 @@ async def get_processed_email_ids(access_token: str, sheet_id: str) -> set[str]:
 # Prefer get_processed_email_ids() in loops to avoid N+1 Sheets API calls.
 async def check_email_parsed(access_token: str, sheet_id: str, email_id: str) -> bool:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = _get_all_rows_sync(sheets, sheet_id)
+        rows = _get_all_rows_sync(access_token, sheet_id)
         return any(_at(r, COLS["email_id"]) == email_id for r in rows)
     return await asyncio.to_thread(work)
 
 
-def _row_number_of(sheets, sheet_id: str, email_id: str) -> int | None:
-    index = _index_cache.get(sheet_id)
-    if index is None:
-        rows = _get_all_rows_sync(sheets, sheet_id)
-        index = _index_cache[sheet_id] = _index_from_rows(rows)
-    return index.get(email_id)
-
-
-def _appended_row_number(response: dict) -> int | None:
-    """Row the append actually landed on, from updatedRange like
-    "parsed_emails!A57:G57". Trusting a local counter instead would corrupt the
-    index if anything else ever wrote to the tab."""
-    rng = ((response or {}).get("updates") or {}).get("updatedRange") or ""
-    tail = rng.split("!")[-1]
-    digits = "".join(c for c in tail.split(":")[0] if c.isdigit())
-    return int(digits) if digits else None
+def _row_number_of(access_token: str, sheet_id: str, email_id: str) -> int | None:
+    rows = _get_all_rows_sync(access_token, sheet_id)
+    return _index_from_rows(rows).get(email_id)
 
 
 # Write a processing result for one email.
@@ -173,7 +135,7 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
         # scanned/failed counts in settings.
         record_fields = dict(zip(PARSED_EMAILS_HEADERS, row))
 
-        existing_row = _row_number_of(sheets, sheet_id, record["emailId"])
+        existing_row = _row_number_of(access_token, sheet_id, record["emailId"])
         if existing_row is not None:
             with_sheets_retry(lambda: sheets.spreadsheets().values().update(
                 spreadsheetId=sheet_id,
@@ -185,7 +147,7 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
                               existing_row, record_fields)
             return
 
-        res = with_sheets_retry(lambda: sheets.spreadsheets().values().append(
+        with_sheets_retry(lambda: sheets.spreadsheets().values().append(
             spreadsheetId=sheet_id,
             range="parsed_emails!A2",
             valueInputOption="RAW",
@@ -194,21 +156,13 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
 
         mirror.append(access_token, sheet_id, "parsed_emails", [record_fields])
 
-        landed = _appended_row_number(res)
-        if landed is not None:
-            _index_cache.setdefault(sheet_id, {})[record["emailId"]] = landed
-        else:
-            # Could not tell where it went — drop the cache rather than let it
-            # drift and overwrite the wrong row later.
-            invalidate_index(sheet_id)
     await asyncio.to_thread(work)
 
 
 # Returns stats for the status display in settings.
 async def get_parsed_email_stats(access_token: str, sheet_id: str) -> dict:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = _get_all_rows_sync(sheets, sheet_id)
+        rows = _get_all_rows_sync(access_token, sheet_id)
         status_at = COLS["status"]
         return {
             "total": len(rows),

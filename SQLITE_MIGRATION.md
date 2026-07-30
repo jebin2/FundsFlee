@@ -379,12 +379,20 @@ still authoritative, so a missed local write costs drift, which verify detects,
 and failing a user's save because the mirror hiccuped would be worse. That
 inverts the moment reads move over.
 
-**Phase 3 — reads move to SQLite.** Behind the existing `app/sheets` facade, so
-call sites do not change. Gate it on a clean `verify_mirror.py`. Mirror write
-failures become hard failures in the same change.
+**Phase 3 — reads move to SQLite.** *(done)* Behind the existing `app/sheets`
+facade, so no call site outside it changed. `mirror.rows()` returns positional
+lists in sheet order — the exact shape `values().get` returns — so each module
+moved by replacing one read, and every parser downstream was left alone.
 
-*This phase kills the 200-row page, `loadAll`, the "This year" bug, and every
-read-side quota problem.*
+Mirror write failures became hard failures in the same change: while the mirror
+served nothing, swallowing was right; now it would show a user their data
+without their last change and call it success.
+
+Gone with it: `_row_index_cache`, `_index_cache`, and the sheet reads inside
+write paths (finding a meta key's row, a category's row, a transaction's row).
+
+*Reads now cost nothing. The 200-row page is a slice, and "This year" is a
+filter over the whole history rather than over page one.*
 
 **Phase 3b — the syncer.** Direct sheet writes are replaced by the dirty-row
 push; Sheets stops being written synchronously at all.

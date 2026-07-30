@@ -8,7 +8,6 @@ import asyncio
 import pytest
 
 import app.sheets.init as init_mod
-import app.sheets.transactions as transactions_mod
 from app.sheets.headers import EXPECTED_HEADERS
 from app.db.registry import col_letter as _col_letter
 from app.sheets.init import _DATA_RANGES, _HEADER_WRITES
@@ -77,9 +76,15 @@ class TestReset:
         assert f"transactions!A1:{_col_letter(len(EXPECTED_HEADERS))}1" in fake.header_writes
         assert len([w for w in fake.header_writes if "!A1:" in w]) == len(_HEADER_WRITES)
 
-    def test_drops_the_stale_row_index(self, fake):
-        # Cached id -> row numbers all point at cleared rows after a reset;
-        # keeping them would let an update resurrect a row.
-        transactions_mod._row_index_cache["sheet"] = {"old-tx": 5}
+    def test_discards_the_mirror(self, fake):
+        # The sheet has just been emptied. A mirror still holding every old row
+        # would keep serving deleted data to reads — and eventually push it
+        # back.
+        from app.db import connect, mirror_exists, Repo, spec
+        conn = connect("sheet")
+        Repo(conn, spec("transactions")).insert({"id": "old-tx"})
+        conn.close()
+        assert mirror_exists("sheet")
+
         asyncio.run(init_mod.reset_sheet("tok", "sheet"))
-        assert "sheet" not in transactions_mod._row_index_cache
+        assert not mirror_exists("sheet")

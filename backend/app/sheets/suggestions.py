@@ -12,7 +12,6 @@ status = pending | accepted | rejected
 """
 import asyncio
 
-from googleapiclient.errors import HttpError
 
 from app.core.dates import now_iso
 from app.db import mirror
@@ -47,18 +46,8 @@ def ensure_item_suggestions_tab_sync(sheets, sheet_id: str) -> None:
     ).execute()
 
 
-def read_suggestion_rows_sync(sheets, sheet_id: str) -> list[list]:
-    try:
-        res = sheets.spreadsheets().values().get(
-            spreadsheetId=sheet_id, range="item_suggestions!A2:G1000"
-        ).execute()
-        return res.get("values") or []
-    except HttpError as err:
-        msg = str(err)
-        if "Unable to parse range" in msg or "not found" in msg:
-            ensure_item_suggestions_tab_sync(sheets, sheet_id)
-            return []
-        raise
+def read_suggestion_rows_sync(access_token: str, sheet_id: str) -> list[list]:
+    return mirror.rows(access_token, sheet_id, "item_suggestions")
 
 
 def _row_to_suggestion(r: list) -> dict:
@@ -75,8 +64,7 @@ def _row_to_suggestion(r: list) -> dict:
 
 async def get_item_suggestions(access_token: str, sheet_id: str) -> list[dict]:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = read_suggestion_rows_sync(sheets, sheet_id)
+        rows = read_suggestion_rows_sync(access_token, sheet_id)
         return [_row_to_suggestion(r) for r in rows if r and r[0]]
     return await asyncio.to_thread(work)
 
@@ -91,7 +79,7 @@ async def append_item_suggestions(
         sheets = get_sheets_client(access_token)
 
         # Dedup against existing — never overwrite an existing entry (any status)
-        rows = read_suggestion_rows_sync(sheets, sheet_id)
+        rows = read_suggestion_rows_sync(access_token, sheet_id)
         existing_keys = {f"{_at(r, 0)}::{_at(r, 1)}" for r in rows}
         # For normalize rows, also dedup by current_val+field (key is a tx ID
         # that may differ between runs)
@@ -135,7 +123,7 @@ async def resolve_item_suggestion(
 ) -> None:
     def work():
         sheets = get_sheets_client(access_token)
-        rows = read_suggestion_rows_sync(sheets, sheet_id)
+        rows = read_suggestion_rows_sync(access_token, sheet_id)
         idx = next(
             (i for i, r in enumerate(rows) if _at(r, 0) == key and _at(r, 1) == field), -1
         )

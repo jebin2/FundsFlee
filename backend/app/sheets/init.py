@@ -1,10 +1,11 @@
 """Spending-sheet bootstrap — port of src/lib/sheets/init.ts."""
 import asyncio
 
+from app.db import mirror
+from app.db.connection import discard_mirror
 from app.db.registry import TABS
 from app.sheets.client import execute, get_drive_client, get_sheets_client
 from app.sheets.default_categories import seed_default_categories_sync
-from app.sheets.transactions import invalidate_row_index
 from app.sheets.migrations import (
     ensure_parsed_emails_tab_sync,
     ensure_transaction_schema_sync,
@@ -113,8 +114,12 @@ def _reset_sheet_sync(access_token: str, sheet_id: str) -> None:
             body={"values": [list(headers)]},
         ).execute()
 
-    # Every cached id -> row number now points at a cleared row.
-    invalidate_row_index(sheet_id)
+    # The sheet has just been emptied and the mirror still holds every old row.
+    # Discard it so the next access rebuilds from what the sheet now contains —
+    # otherwise reads would keep serving deleted data, and worse, the syncer
+    # would eventually push it back.
+    discard_mirror(sheet_id)
+    mirror.forget(sheet_id)
 
     sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
     seed_default_categories_sync(sheets, sheet_id)

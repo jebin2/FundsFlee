@@ -22,11 +22,7 @@ def _row_to_category(r: list) -> dict:
 
 
 def _get_categories_sync(access_token: str, sheet_id: str) -> list[dict]:
-    sheets = get_sheets_client(access_token)
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="categories!A2:G200"
-    ).execute()
-    rows = res.get("values") or []
+    rows = mirror.rows(access_token, sheet_id, "categories")
     return [_row_to_category(r) for r in rows if len(r) > 1 and r[0] and r[1]]
 
 
@@ -56,10 +52,7 @@ async def append_category(access_token: str, sheet_id: str, cat: dict) -> None:
 
 def _delete_category_by_id_sync(access_token: str, sheet_id: str, cat_id: str) -> None:
     sheets = get_sheets_client(access_token)
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="categories!A2:A200"
-    ).execute()
-    rows = res.get("values") or []
+    rows = mirror.rows(access_token, sheet_id, "categories")
     row_index = next((i for i, r in enumerate(rows) if r and r[0] == cat_id), -1)
     if row_index < 0:
         return

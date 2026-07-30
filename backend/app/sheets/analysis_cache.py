@@ -24,11 +24,8 @@ def _at(r: list, i: int) -> str:
     return r[i] if i < len(r) and r[i] is not None else ""
 
 
-def _read_rows_sync(sheets, sheet_id: str) -> list[list]:
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="analysis_cache!A2:G200"
-    ).execute()
-    return res.get("values") or []
+def _read_rows_sync(access_token: str, sheet_id: str) -> list[list]:
+    return mirror.rows(access_token, sheet_id, "analysis_cache")
 
 
 def _row_to_cached_analysis(row: list) -> dict:
@@ -48,8 +45,7 @@ def _row_to_cached_analysis(row: list) -> dict:
 def _get_analysis_cache_sync(
     access_token: str, sheet_id: str, period: str, max_age_hours: float
 ) -> dict | None:
-    sheets = get_sheets_client(access_token)
-    rows = _read_rows_sync(sheets, sheet_id)
+    rows = _read_rows_sync(access_token, sheet_id)
 
     # For "generating" entries, always return regardless of TTL so client can poll
     generating = next(
@@ -97,7 +93,7 @@ def _upsert_analysis_cache_row_sync(
     drive_file_id: str = "",
 ) -> None:
     sheets = get_sheets_client(access_token)
-    rows = _read_rows_sync(sheets, sheet_id)
+    rows = _read_rows_sync(access_token, sheet_id)
     values = [[str(uuid.uuid4()), period, period_type, summary_json, now_iso(), status, drive_file_id]]
     idx = next((i for i, r in enumerate(rows) if _at(r, 1) == period), -1)
     record = dict(zip(ANALYSIS_CACHE_HEADERS, values[0]))
@@ -170,8 +166,7 @@ async def get_analysis_cache_for_periods(
     access_token: str, sheet_id: str, periods: list[str]
 ) -> dict[str, dict | None]:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = _read_rows_sync(sheets, sheet_id)
+        rows = _read_rows_sync(access_token, sheet_id)
         result: dict[str, dict | None] = {}
         for period in periods:
             row = next((r for r in rows if _at(r, 1) == period), None)
@@ -185,8 +180,7 @@ async def get_analysis_cache_rows_by_status(
     access_token: str, sheet_id: str, status: str
 ) -> list[dict]:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = _read_rows_sync(sheets, sheet_id)
+        rows = _read_rows_sync(access_token, sheet_id)
         return [_row_to_cached_analysis(r) for r in rows if _at(r, 5) == status]
     return await asyncio.to_thread(work)
 

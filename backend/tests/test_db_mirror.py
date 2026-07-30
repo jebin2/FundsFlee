@@ -145,13 +145,16 @@ class TestTheFirstWriteAgainstAPopulatedSheet:
         assert Repo(conn, spec("parsed_emails")).get(email_id="m1")["status"] == "parsed"
 
 
-class TestFailuresDoNotBreakTheWrite:
-    def test_a_broken_mirror_is_swallowed(self, wired, monkeypatch):
-        # The sheet write already succeeded. Raising here would fail a user's
-        # save because a store that serves nothing yet hiccuped.
+class TestFailuresAreLoudNow:
+    def test_a_broken_mirror_raises(self, wired, monkeypatch):
+        # Inverted for phase 3. While the mirror served nothing, swallowing was
+        # right — the sheet had the row and drift was merely detectable. Now
+        # that reads come from here, swallowing would show the user their data
+        # without their last change and call it success.
         monkeypatch.setattr(mirror, "connect",
                             lambda sid: (_ for _ in ()).throw(RuntimeError("disk gone")))
-        mirror.append("tok", "s1", "meta", [{"key": "a"}])   # must not raise
+        with pytest.raises(RuntimeError):
+            mirror.append("tok", "s1", "meta", [{"key": "a"}])
 
     def test_an_update_with_no_local_row_is_survivable(self, wired):
         mirror.update("tok", "s1", "meta", {"value": "x"}, key="ghost")

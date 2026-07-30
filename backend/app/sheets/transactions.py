@@ -13,8 +13,6 @@ from app.sheets.migrations import (
     ensure_transaction_schema_sync,
 )
 from app.sheets.transaction_schema import (
-    ID_RANGE,
-    LAST_COL,
     is_deleted_row,
     letter,
     row_to_transaction,
@@ -28,25 +26,17 @@ PAGE_SIZE = 200
 # In-memory row-index cache: sheetId → {txId: 1-based sheet row number}
 # Invalidated on append (new row not in cache) and on soft-delete (row IDs shift
 # logically). Existing row numbers for un-deleted rows remain valid across appends.
-_row_index_cache: dict[str, dict[str, int]] = {}
+def _row_number_of(access_token: str, sheet_id: str, tx_id: str) -> int | None:
+    """Sheet row holding this id.
 
-
-def _get_row_index_map(sheets, sheet_id: str) -> dict[str, int]:
-    if sheet_id in _row_index_cache:
-        return _row_index_cache[sheet_id]
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range=ID_RANGE
-    ).execute()
-    index_map: dict[str, int] = {}
-    for i, r in enumerate(res.get("values") or []):
-        if r and r[0]:
-            index_map[str(r[0])] = i + 2  # +2: 1-indexed + header row
-    _row_index_cache[sheet_id] = index_map
-    return index_map
-
-
-def invalidate_row_index(sheet_id: str) -> None:
-    _row_index_cache.pop(sheet_id, None)
+    The cache this replaces existed because every lookup was an API read of the
+    whole id column. Locally it is a scan of rows already in memory, so there is
+    nothing to cache and nothing to invalidate.
+    """
+    for i, r in enumerate(mirror.rows(access_token, sheet_id, "transactions")):
+        if r and r[0] == tx_id:
+            return i + 2  # +2: 1-indexed plus the header row
+    return None
 
 
 class TransactionPage(TypedDict):
@@ -58,21 +48,9 @@ class TransactionPage(TypedDict):
 # Read ID and deleted columns in one batchGet.
 #   physical — total rows with an ID (including soft-deleted) — used for pagination math
 #   visible  — rows with an ID that are NOT deleted — shown as "X of Y" to the user
-def _get_row_counts(sheets, sheet_id: str) -> tuple[int, int]:
-    deleted_letter = letter("deleted")
-    res = sheets.spreadsheets().values().batchGet(
-        spreadsheetId=sheet_id,
-        ranges=["transactions!A2:A", f"transactions!{deleted_letter}2:{deleted_letter}"],
-        majorDimension="COLUMNS",
-    ).execute()
-    value_ranges = res.get("valueRanges") or [{}, {}]
-    ids = (value_ranges[0].get("values") or [[]])[0]
-    deleted = (value_ranges[1].get("values") or [[]])[0] if len(value_ranges) > 1 else []
-    physical = sum(1 for v in ids if v)
-    visible = sum(
-        1 for i, v in enumerate(ids)
-        if v and (i >= len(deleted) or deleted[i] != "TRUE")
-    )
+def _get_row_counts(rows: list[list]) -> tuple[int, int]:
+    physical = sum(1 for r in rows if r and r[0])
+    visible = sum(1 for r in rows if r and r[0] and not is_deleted_row(r))
     return physical, visible
 
 
@@ -122,9 +100,6 @@ def _append_transactions_sync(access_token: str, sheet_id: str, txs: list[dict])
         except HttpError:
             pass  # rows are already written; dates just stay text
 
-    # New rows are not in the cache — force rebuild on next update call.
-    invalidate_row_index(sheet_id)
-
     # Phase 2 dual-write. The sheet is still authoritative; this only keeps the
     # mirror in step so reads can move over with evidence.
     mirror.append(access_token, sheet_id, "transactions",
@@ -151,26 +126,21 @@ async def append_transaction(access_token: str, sheet_id: str, tx: dict) -> None
 def _get_transactions_sync(
     access_token: str, sheet_id: str, page: int, page_size: int
 ) -> TransactionPage:
-    sheets = get_sheets_client(access_token)
-    physical, visible = _get_row_counts(sheets, sheet_id)
+    all_rows = mirror.rows(access_token, sheet_id, "transactions")
+    physical, visible = _get_row_counts(all_rows)
 
     if physical == 0:
         return {"transactions": [], "total": 0, "hasMore": False}
 
-    # Pagination uses the PHYSICAL row count so we read the right rows from the
-    # sheet. Deleted rows occupy physical space — they're in the range math
-    # even though they are filtered out after fetching.
+    # Same window as before, still expressed in PHYSICAL rows: soft-deleted rows
+    # occupy positions and are filtered out after slicing, not before, so page
+    # boundaries stay where the sheet has them.
     last_data_row = physical + 1  # +1 for the header row
     end_row = last_data_row - (page - 1) * page_size
     start_row = max(2, end_row - page_size + 1)
     has_more = start_row > 2
 
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id,
-        range=f"transactions!A{start_row}:{LAST_COL}{end_row}",
-    ).execute()
-
-    rows = res.get("values") or []
+    rows = all_rows[start_row - 2:end_row - 1]
     transactions = [
         row_to_transaction(r) for r in rows
         if r and r[0] and not is_deleted_row(r)
@@ -187,20 +157,9 @@ async def get_transactions(
 
 
 def _get_transaction_by_id_sync(access_token: str, sheet_id: str, tx_id: str) -> dict | None:
-    sheets = get_sheets_client(access_token)
-    index_map = _get_row_index_map(sheets, sheet_id)
-    row_number = index_map.get(tx_id)
-    if not row_number:
-        return None
-
-    res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id,
-        range=f"transactions!A{row_number}:{LAST_COL}{row_number}",
-    ).execute()
-
-    rows = res.get("values") or []
-    row = rows[0] if rows else None
-    if not row or not row[0] or is_deleted_row(row):
+    row = next((r for r in mirror.rows(access_token, sheet_id, "transactions")
+                if r and r[0] == tx_id), None)
+    if not row or is_deleted_row(row):
         return None
     return row_to_transaction(row)
 
@@ -213,8 +172,7 @@ def _update_transaction_field_sync(
     access_token: str, sheet_id: str, tx_id: str, updates: dict
 ) -> None:
     sheets = get_sheets_client(access_token)
-    index_map = _get_row_index_map(sheets, sheet_id)
-    row_number = index_map.get(tx_id)
+    row_number = _row_number_of(access_token, sheet_id, tx_id)
     if not row_number:
         return
 
@@ -239,10 +197,6 @@ def _update_transaction_field_sync(
                 spreadsheetId=sheet_id,
                 body={"valueInputOption": "USER_ENTERED", "data": date_cells},
             ).execute())
-        # Soft deletes change the logical row set — invalidate so next update re-fetches
-        if updates.get("deleted"):
-            invalidate_row_index(sheet_id)
-
         mirror.update_row(access_token, sheet_id, "transactions", row_number, fields)
 
 
@@ -255,12 +209,7 @@ async def update_transaction_field(
 # Fetch every transaction in one request — for server-side analysis jobs only.
 # Not suitable for client-side rendering; use get_transactions() with pagination.
 def _get_all_transactions_sync(access_token: str, sheet_id: str) -> list[dict]:
-    sheets = get_sheets_client(access_token)
-    res = with_sheets_retry(lambda: sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id,
-        range=f"transactions!A2:{LAST_COL}",
-    ).execute())
-    rows = res.get("values") or []
+    rows = mirror.rows(access_token, sheet_id, "transactions")
     return [
         row_to_transaction(r) for r in rows
         if r and r[0] and not is_deleted_row(r)
