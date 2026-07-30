@@ -49,27 +49,46 @@ It also makes deleting a user's data a file delete, and backup a directory copy.
 
 ### Tables
 
-| table | mirrored to sheet | note |
-|---|---|---|
-| `transactions` | yes | the 27 columns from `transaction_schema.COLS`, in COLS order |
-| `categories` | yes | |
-| `meta` | yes | key/value, as the tab is |
-| `item_suggestions` | yes | |
-| `parsed_emails` | **no** | import bookkeeping you never read — a whole tab of quota disappears |
-| `analysis_cache` | **no** | derived; regenerate rather than mirror |
+**Every tab, every column, every row.** No exceptions, no local-only tables, no
+derived data left out:
+
+| table | columns |
+|---|---|
+| `transactions` | the 27 of `transaction_schema.COLS`, in COLS order |
+| `categories` | `CATEGORIES_HEADERS` |
+| `analysis_cache` | `ANALYSIS_CACHE_HEADERS` |
+| `item_suggestions` | `ITEM_SUGGESTIONS_HEADERS` |
+| `meta` | `META_HEADERS` |
+| `parsed_emails` | `PARSED_EMAILS_HEADERS` |
+
+An earlier draft kept `parsed_emails` and `analysis_cache` local-only to save
+quota. That reasoning does not survive this design: once the syncer batches,
+`parsed_emails` costs one request per cycle rather than one per message. The
+saving was worth nothing and the asymmetry cost real clarity — a partial mirror
+means every question about the sheet needs qualifying with "except those two".
 
 Every mirrored table carries **exactly the tab's columns and nothing else**. All
 values are `TEXT`, because that is what the sheet holds; typing happens in the
 app layer, as it does today.
 
-Column definitions are generated from the existing header tuples
-(`transaction_schema.COLS`, `headers.py`), so one definition drives the SQLite
+Column definitions are generated from the existing header tuples in
+`headers.py` and `transaction_schema.COLS`, so one definition drives the SQLite
 schema, the sheet header, and the sync ranges. They cannot drift apart.
+
+### Deletion is soft, everywhere
+
+There is **no hard delete in either store**. A removed transaction is a field
+update — `is_deleted` — exactly as today, so the row keeps its position in both
+the table and the tab.
+
+This is not only a data-retention choice. It is what makes row position stable,
+which is what makes the position-is-identity mapping below work at all.
 
 ### Where the bookkeeping lives
 
-Sync state cannot go on the data tables without breaking the resemblance, so it
-goes in two sidecar tables prefixed `_`, which are never mirrored:
+The mirror database contains tabs and nothing else, so sync state goes in a
+**separate file**: `data/sheets/{sheet_id}.sync.db`. Open the mirror in any
+SQLite browser and every table you see is a tab.
 
 ```sql
 _dirty(tab TEXT, row_num INTEGER, PRIMARY KEY (tab, row_num))
@@ -77,23 +96,30 @@ _sync(tab TEXT PRIMARY KEY, hydrated_at TEXT, last_push_at TEXT,
       last_row_pushed INTEGER, last_error TEXT)
 ```
 
-`_dirty` is populated by **SQLite triggers** on every mirrored table:
+A single connection factory `ATTACH`es the sync database, and triggers on each
+mirrored table write into it:
 
 ```sql
 CREATE TRIGGER transactions_ai AFTER INSERT ON transactions
-  BEGIN INSERT OR IGNORE INTO _dirty VALUES ('transactions', new.rowid); END;
+  BEGIN INSERT OR IGNORE INTO sync._dirty VALUES ('transactions', new.rowid); END;
 CREATE TRIGGER transactions_au AFTER UPDATE ON transactions
-  BEGIN INSERT OR IGNORE INTO _dirty VALUES ('transactions', new.rowid); END;
+  BEGIN INSERT OR IGNORE INTO sync._dirty VALUES ('transactions', new.rowid); END;
 ```
 
-So application code never marks anything dirty — it writes a row and the
-tracking happens underneath. There is no way to forget it, which is the usual
-way a sync layer starts silently dropping changes.
+Application code never marks anything dirty — it writes a row and the tracking
+happens underneath, so a code path cannot forget to do it. That is the usual way
+a sync layer starts silently dropping changes.
+
+**The trade-off:** a connection opened without the `ATTACH` fails on write,
+because the trigger references a database that is not there. That is why the
+factory must be the only way to open the mirror. Reads are unaffected, so
+inspecting the file by hand still works — it is writing to it by hand that
+fails, which is not something we want to support anyway.
 
 ### No `sheet_row` column is needed
 
-Because rows are only ever appended and never removed — soft-delete is already
-a field update, not a deletion — **a row's position is its identity**. Sheet row
+Because rows are only ever appended and never removed — see soft delete above —
+**a row's position is its identity**. Sheet row
 is `rowid + 1`, always. That is precisely why the 1:1 model is worth having:
 the mapping that would otherwise need a column and a cache is implied by the
 ordering.
@@ -125,6 +151,9 @@ Because row number is `rowid + 1`, every range is computed arithmetically —
 nothing has to be looked up, in the sheet or in a cache.
 
 **Cost: one or two requests per dirty tab per cycle, regardless of row count.**
+With all six tabs mirrored that is a ceiling of about twelve requests a cycle in
+the worst case where everything changed at once — against a quota of sixty a
+minute, and against the thousands a single import spends today.
 
 ### Full rewrite as the repair path
 
@@ -179,7 +208,7 @@ guidelines:
 
 1. **Never push when the local table is empty and the sheet is not.** An empty local store means "not hydrated yet", never "the user
    deleted everything". Without this, one failed hydration blanks the sheet.
-2. **Never delete sheet rows.** Soft-delete only, as today.
+2. **Never delete a row in either store.** Soft-delete only, as today.
 3. **Hydration runs only when local is empty and `hydrated_at` is unset.**
 4. **Clear `_dirty` entries only after a confirmed successful write.**
 5. **Never delete a local row, and never `VACUUM`.** Row position is row
@@ -211,9 +240,8 @@ every read-side quota problem.*
 dirty flag; the syncer becomes the only thing that writes to Sheets.
 
 **Phase 4 — remove the scaffolding.** Delete the direct-write paths, the row
-index caches in `transactions.py` and `parsed_emails.py`, and the
-quota-driven batching contortions. Drop `parsed_emails` and `analysis_cache`
-from the sheet.
+index caches in `transactions.py` and `parsed_emails.py`, and the quota-driven
+batching contortions. Every tab stays in the sheet; nothing is dropped.
 
 ## What this deletes
 
