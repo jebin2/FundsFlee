@@ -14,10 +14,27 @@ import { useCreateTransaction } from "@/features/transactions/hooks/useCreateTra
 import { todayISO } from "@/lib/date/iso";
 import type { Transaction } from "@/types";
 
+const PERIODS: Period[] = ["week", "month", "year", "all"];
+
+const PERIOD_CHIP: Record<Period, string> = {
+  week: "This week",
+  month: "This month",
+  year: "This year",
+  all: "All time",
+};
+
+// Reads as "12 transactions <suffix>" under the total.
+function periodSuffix(period: Period): string {
+  if (period === "week") return " this week";
+  if (period === "year") return " this year";
+  if (period === "all") return " in total";
+  return ` this ${new Date().toLocaleString("en-IN", { month: "long" })}`;
+}
+
 export default function DashboardPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const { transactions, refresh, syncing } = useTransactions();
+  const { transactions, refresh, syncing, hasMore, loadingMore, loadAll } = useTransactions();
   // Show skeleton only when store is empty; if we already have data (from
   // local cache or a previous session) render it immediately and refresh quietly.
   const [loading, setLoading] = useState(transactions.length === 0);
@@ -57,6 +74,15 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Every other period fits comfortably in the first page; "All time" does not,
+  // and a partial store would total the most recent rows under an all-time
+  // label. Pull the rest before the number means anything.
+  useEffect(() => {
+    if (period === "all" && hasMore) void loadAll();
+  }, [period, hasMore, loadAll]);
+
+  const incomplete = period === "all" && (hasMore || loadingMore);
+
   const { from, to } = getPeriodRange(period);
   const filtered = transactions.filter(
     (t) => t.date >= from && t.date <= to
@@ -86,7 +112,7 @@ export default function DashboardPage() {
 
       {/* Period selector */}
       <div className="flex gap-2">
-        {(["week", "month", "year"] as Period[]).map((p) => (
+        {PERIODS.map((p) => (
           <button
             key={p}
             onClick={() => setPeriod(p)}
@@ -96,7 +122,7 @@ export default function DashboardPage() {
               color: p === period ? "var(--color-on-primary)" : "var(--color-on-surface-variant)",
             }}
           >
-            {p === "week" ? "This week" : p === "month" ? "This month" : "This year"}
+            {PERIOD_CHIP[p]}
           </button>
         ))}
       </div>
@@ -105,11 +131,11 @@ export default function DashboardPage() {
       <div className="rounded-3xl p-6" style={{ background: "var(--color-primary)", boxShadow: "0 8px 24px rgba(31,16,142,0.25)" }}>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>Total Spent</p>
         <p style={{ fontSize: 40, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} className="mt-1">
-          {amountLoading ? "…" : formatINR(totalSpent)}
+          {amountLoading || incomplete ? "…" : formatINR(totalSpent)}
         </p>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }} className="mt-2">
           {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
-          {period === "month" ? ` this ${new Date().toLocaleString("en-IN", { month: "long" })}` : period === "week" ? " this week" : " this year"}
+          {periodSuffix(period)}
         </p>
 
         {/* Mini category bars */}

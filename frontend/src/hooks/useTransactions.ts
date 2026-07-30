@@ -4,6 +4,9 @@ import { useCallback, useRef } from "react";
 import { useTransactionsStore } from "@/store/transactionsStore";
 import { pullTransactions } from "@/lib/offline";
 
+// The server caps pageSize at 500.
+const ALL_PAGE_SIZE = 500;
+
 export function useTransactions() {
   const transactions  = useTransactionsStore((s) => s.transactions);
   const total         = useTransactionsStore((s) => s.total);
@@ -33,6 +36,36 @@ export function useTransactions() {
     }
   }, [setTransactions, setSyncing]);
 
+  // Pull every remaining page. The dashboard's "All time" needs the whole
+  // history: refresh() loads page 1 only, so summing the store would have
+  // reported the most recent 200 rows under an "All time" label.
+  //
+  // Bigger pages than the default 200 (the server caps pageSize at 500) so a
+  // long history costs a handful of requests rather than dozens of them.
+  const loadAll = useCallback(async () => {
+    const state = useTransactionsStore.getState();
+    if (state.loadingMore || !state.hasMore) return;
+    setLoadingMore(true);
+    try {
+      let page = 1;
+      for (;;) {
+        const { transactions: txs, total: t, hasMore: hm } =
+          await pullTransactions(page, ALL_PAGE_SIZE);
+        mergeTransactions(txs, t, hm);
+        if (!hm) break;
+        page += 1;
+      }
+      // Page numbering above is in ALL_PAGE_SIZE units, not loadMore's. That
+      // only stays consistent because the loop exits with hasMore false, which
+      // makes loadMore a no-op until the next refresh() resets the cursor.
+      currentPageRef.current = page;
+    } catch {
+      // Keep whatever pages did arrive; the total stays marked incomplete.
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [mergeTransactions, setLoadingMore]);
+
   // Load the next page and merge into the store
   const loadMore = useCallback(async () => {
     // Read both flags from store state to avoid stale closure race
@@ -51,5 +84,5 @@ export function useTransactions() {
     }
   }, [mergeTransactions, setLoadingMore]);
 
-  return { transactions, total, hasMore, syncing, loadingMore, refresh, loadMore };
+  return { transactions, total, hasMore, syncing, loadingMore, refresh, loadMore, loadAll };
 }

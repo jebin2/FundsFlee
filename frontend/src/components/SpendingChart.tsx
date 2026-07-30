@@ -42,6 +42,37 @@ function dateLabel(date: string, period: Period): string {
 function buildTrendData(transactions: Transaction[], from: string, to: string, period: Period) {
   const buckets: Record<string, number> = {};
 
+  if (period === "all") {
+    // Monthly buckets spanning only the months that actually hold data. The
+    // range for "all" starts in 1970, so bucketing by day — or seeding from
+    // `from` the way the year branch does — would build tens of thousands of
+    // empty bars.
+    // A blank date would sort to the front and make the span start at an
+    // Invalid Date, leaving the chart silently empty.
+    const months = transactions
+      .map((tx) => tx.date?.slice(0, 7))
+      .filter((m): m is string => !!m && m.length === 7)
+      .sort();
+    if (months.length === 0) return [];
+    const [first, last] = [months[0], months[months.length - 1]];
+
+    const cursor = new Date(first + "-01T00:00:00");
+    const end = new Date(last + "-01T00:00:00");
+    while (cursor <= end) {
+      buckets[toISODate(cursor).slice(0, 7)] = 0;
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    for (const tx of transactions) {
+      const key = tx.date.slice(0, 7);
+      if (key in buckets) buckets[key] = (buckets[key] ?? 0) + tx.amount;
+    }
+    return Object.entries(buckets).map(([key, amount]) => ({
+      label: new Date(key + "-01T00:00:00").toLocaleString(
+        "en-IN", { month: "short", year: "2-digit" }),
+      amount: Math.round(amount),
+    }));
+  }
+
   if (period === "year") {
     // Monthly buckets
     for (let m = 0; m < 12; m++) {
