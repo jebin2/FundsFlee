@@ -10,7 +10,8 @@ import pytest
 import app.sheets.init as init_mod
 import app.sheets.transactions as transactions_mod
 from app.sheets.headers import EXPECTED_HEADERS
-from app.sheets.init import _DATA_RANGES, _HEADER_WRITES, _col_letter
+from app.db.registry import col_letter as _col_letter
+from app.sheets.init import _DATA_RANGES, _HEADER_WRITES
 from app.sheets.transaction_schema import COLS, LAST_COL
 
 

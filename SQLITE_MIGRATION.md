@@ -86,9 +86,8 @@ which is what makes the position-is-identity mapping below work at all.
 
 ### Where the bookkeeping lives
 
-The mirror database contains tabs and nothing else, so sync state goes in a
-**separate file**: `data/sheets/{sheet_id}.sync.db`. Open the mirror in any
-SQLite browser and every table you see is a tab.
+`_dirty` and `_sync` live in the mirror file, underscore-prefixed. All six tabs
+are still exact mirrors; these two are visibly not tabs.
 
 ```sql
 _dirty(tab TEXT, row_num INTEGER, PRIMARY KEY (tab, row_num))
@@ -96,25 +95,25 @@ _sync(tab TEXT PRIMARY KEY, hydrated_at TEXT, last_push_at TEXT,
       last_row_pushed INTEGER, last_error TEXT)
 ```
 
-A single connection factory `ATTACH`es the sync database, and triggers on each
-mirrored table write into it:
+They were going to live in a separate `{sheet_id}.sync.db` so the mirror held
+nothing but tabs. **SQLite forbids qualified table names inside triggers**, so
+that design cannot have both a separate file and automatic marking — and
+atomicity settled which to give up. A mark in another file cannot commit with
+the row it describes, because WAL mode provides no cross-database atomic
+commit, so a crash between the two would leave a row that never syncs.
+
+Marking is done by triggers on every mirrored table:
 
 ```sql
-CREATE TRIGGER transactions_ai AFTER INSERT ON transactions
-  BEGIN INSERT OR IGNORE INTO sync._dirty VALUES ('transactions', new.rowid); END;
-CREATE TRIGGER transactions_au AFTER UPDATE ON transactions
-  BEGIN INSERT OR IGNORE INTO sync._dirty VALUES ('transactions', new.rowid); END;
+CREATE TRIGGER transactions_dirty_insert AFTER INSERT ON transactions
+  BEGIN INSERT OR IGNORE INTO _dirty VALUES ('transactions', new.rowid); END;
 ```
 
 Application code never marks anything dirty — it writes a row and the tracking
-happens underneath, so a code path cannot forget to do it. That is the usual way
-a sync layer starts silently dropping changes.
+happens underneath, in the same transaction. There is no way for a code path to
+forget, which is the usual way a sync layer starts silently dropping changes.
 
-**The trade-off:** a connection opened without the `ATTACH` fails on write,
-because the trigger references a database that is not there. That is why the
-factory must be the only way to open the mirror. Reads are unaffected, so
-inspecting the file by hand still works — it is writing to it by hand that
-fails, which is not something we want to support anyway.
+There is **no DELETE trigger**, because there is no delete.
 
 ### No `sheet_row` column is needed
 

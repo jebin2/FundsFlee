@@ -1,16 +1,9 @@
 """Spending-sheet bootstrap — port of src/lib/sheets/init.ts."""
 import asyncio
 
+from app.db.registry import TABS
 from app.sheets.client import execute, get_drive_client, get_sheets_client
 from app.sheets.default_categories import seed_default_categories_sync
-from app.sheets.headers import (
-    ANALYSIS_CACHE_HEADERS,
-    CATEGORIES_HEADERS,
-    EXPECTED_HEADERS,
-    ITEM_SUGGESTIONS_HEADERS,
-    META_HEADERS,
-    PARSED_EMAILS_HEADERS,
-)
 from app.sheets.transactions import invalidate_row_index
 from app.sheets.migrations import (
     ensure_parsed_emails_tab_sync,
@@ -23,34 +16,12 @@ APP_PROP_KEY = "fundsFleeRole"
 APP_SHEET_ROLE = "main"
 SHEET_DISPLAY_NAME = "FundsFlee"
 
-_TAB_TITLES = ["transactions", "categories", "analysis_cache", "item_suggestions", "meta", "parsed_emails"]
-
-
-def _col_letter(count: int) -> str:
-    """1-based column count -> its letter (26 -> Z, 27 -> AA)."""
-    out = ""
-    while count:
-        count, rem = divmod(count - 1, 26)
-        out = chr(65 + rem) + out
-    return out
-
-
-# Ranges are derived from the header tuples, never written out by hand: a
+# Titles and ranges both come from the registry — never written out by hand: a
 # hand-typed A2:Z is how column AA came to be skipped by both the header write
 # and the reset.
-_TABS = (
-    ("transactions", EXPECTED_HEADERS),
-    ("categories", CATEGORIES_HEADERS),
-    ("analysis_cache", ANALYSIS_CACHE_HEADERS),
-    ("item_suggestions", ITEM_SUGGESTIONS_HEADERS),
-    ("meta", META_HEADERS),
-    ("parsed_emails", PARSED_EMAILS_HEADERS),
-)
-
-_HEADER_WRITES = [
-    (f"{tab}!A1:{_col_letter(len(headers))}1", headers) for tab, headers in _TABS
-]
-_DATA_RANGES = [f"{tab}!A2:{_col_letter(len(headers))}" for tab, headers in _TABS]
+_TAB_TITLES = [spec.name for spec in TABS]
+_HEADER_WRITES = [(spec.header_range, spec.columns) for spec in TABS]
+_DATA_RANGES = [spec.data_range for spec in TABS]
 
 
 def _init_spending_sheet_sync(access_token: str, _user_name: str) -> dict:
