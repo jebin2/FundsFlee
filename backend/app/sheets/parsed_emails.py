@@ -7,6 +7,8 @@ tx_ids: comma-separated transaction IDs (empty for skipped/failed)
 import asyncio
 from typing import TypedDict
 
+from googleapiclient.errors import HttpError
+
 from app.sheets.client import get_sheets_client, with_sheets_retry
 from app.sheets.migrations import ensure_parsed_emails_tab_sync
 
@@ -28,18 +30,25 @@ def _at(r: list, i: int) -> str:
 
 
 def _get_all_rows_sync(sheets, sheet_id: str) -> list[list]:
+    """Every recorded row, or a raise.
+
+    This used to swallow ANY exception and return [] as though the tab were
+    missing. An empty result here does not mean "nothing processed yet" to the
+    callers — it means "process everything again", so a single 429 would
+    reimport the whole backlog and duplicate every transaction in it. Only a
+    genuinely absent tab is handled; everything else propagates.
+    """
     try:
-        res = sheets.spreadsheets().values().get(
+        return with_sheets_retry(lambda: sheets.spreadsheets().values().get(
             spreadsheetId=sheet_id, range=RANGE
-        ).execute()
-        return res.get("values") or []
-    except Exception:
-        # Tab missing for users whose sheet predates this feature — create it
-        try:
+        ).execute()).get("values") or []
+    except HttpError as err:
+        msg = str(err)
+        if "Unable to parse range" in msg or "not found" in msg:
+            # Tab missing for users whose sheet predates this feature — create it
             ensure_parsed_emails_tab_sync(sheets, sheet_id)
-        except Exception:
-            pass
-        return []
+            return []
+        raise
 
 
 # Statuses the import will look at again on the next run. A failure means the

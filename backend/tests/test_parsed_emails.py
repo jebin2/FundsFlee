@@ -7,6 +7,7 @@ the sheet by hand.
 import asyncio
 
 import pytest
+from googleapiclient.errors import HttpError
 
 import app.sheets.parsed_emails as mod
 
@@ -94,6 +95,34 @@ class TestStatuses:
         fake.rows = [_row("a", "parsed"), _row("b", "failed")]
         assert asyncio.run(mod.get_email_statuses("tok", "sheet")) == {
             "a": "parsed", "b": "failed"}
+
+
+class TestReadFailuresAreNotAnEmptyLedger:
+    """An empty read means "reprocess everything" to the import job, so a
+    transient failure must never be reported as one."""
+
+    def _http_error(self, status, message):
+        resp = type("R", (), {"status": status, "reason": message})()
+        return HttpError(resp, message.encode())
+
+    def test_a_quota_error_propagates(self, fake, monkeypatch):
+        # Swallowing this reimported the whole backlog and duplicated every
+        # transaction in it.
+        monkeypatch.setattr(mod, "with_sheets_retry",
+                            lambda fn: (_ for _ in ()).throw(
+                                self._http_error(429, "Quota exceeded")))
+        with pytest.raises(HttpError):
+            asyncio.run(mod.get_email_statuses("tok", "sheet"))
+
+    def test_a_missing_tab_is_created_and_reads_empty(self, fake, monkeypatch):
+        created = []
+        monkeypatch.setattr(mod, "with_sheets_retry",
+                            lambda fn: (_ for _ in ()).throw(
+                                self._http_error(400, "Unable to parse range")))
+        monkeypatch.setattr(mod, "ensure_parsed_emails_tab_sync",
+                            lambda s, sid: created.append(sid))
+        assert asyncio.run(mod.get_email_statuses("tok", "sheet")) == {}
+        assert created == ["sheet"]
 
 
 class TestOneRowPerMessage:

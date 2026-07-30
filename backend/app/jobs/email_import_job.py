@@ -154,10 +154,15 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             log.error("email", "gmail list failed", err)
             return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
+        # Abort rather than assume an empty ledger. Defaulting to {} here means
+        # every already-imported message looks new, so one failed read would
+        # reimport the entire backlog and duplicate every transaction in it.
         try:
             statuses = await get_email_statuses(session.access_token, session.sheet_id)
-        except Exception:
-            statuses = {}
+        except Exception as err:
+            log.error("email", "could not read parsed_emails — skipping this run "
+                               "rather than risk reimporting everything", err)
+            return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
         processed_ids = {m for m, st in statuses.items() if st not in RETRYABLE_STATUSES}
 
         pending = _select_pending(message_ids, processed_ids)

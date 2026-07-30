@@ -81,7 +81,11 @@ export default function DashboardPage() {
     if (period === "all" && hasMore) void loadAll();
   }, [period, hasMore, loadAll]);
 
-  const incomplete = period === "all" && (hasMore || loadingMore);
+  // Two distinct states, because loadAll can fail (a dropped connection, or a
+  // concurrent refresh aborting its first page). Gating the amount on "not
+  // finished" alone left it showing a placeholder forever when that happened.
+  const loadingAll = period === "all" && loadingMore;
+  const partialHistory = period === "all" && hasMore && !loadingMore;
 
   const { from, to } = getPeriodRange(period);
   const filtered = transactions.filter(
@@ -131,11 +135,12 @@ export default function DashboardPage() {
       <div className="rounded-3xl p-6" style={{ background: "var(--color-primary)", boxShadow: "0 8px 24px rgba(31,16,142,0.25)" }}>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>Total Spent</p>
         <p style={{ fontSize: 40, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} className="mt-1">
-          {amountLoading || incomplete ? "…" : formatINR(totalSpent)}
+          {amountLoading || loadingAll ? "…" : formatINR(totalSpent)}
         </p>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }} className="mt-2">
           {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
           {periodSuffix(period)}
+          {partialHistory && " · partial, retry by reselecting"}
         </p>
 
         {/* Mini category bars */}

@@ -7,6 +7,10 @@ import { pullTransactions } from "@/lib/offline";
 // The server caps pageSize at 500.
 const ALL_PAGE_SIZE = 500;
 
+// 25k transactions. Past this the dashboard needs a server-side aggregate,
+// not a bigger client-side loop.
+const MAX_ALL_PAGES = 50;
+
 export function useTransactions() {
   const transactions  = useTransactionsStore((s) => s.transactions);
   const total         = useTransactionsStore((s) => s.total);
@@ -48,12 +52,14 @@ export function useTransactions() {
     setLoadingMore(true);
     try {
       let page = 1;
-      for (;;) {
+      // Bounded rather than while(hasMore): rows are appended by the email
+      // import while this runs, so a server that kept reporting hasMore would
+      // otherwise spin here indefinitely.
+      for (; page <= MAX_ALL_PAGES; page += 1) {
         const { transactions: txs, total: t, hasMore: hm } =
           await pullTransactions(page, ALL_PAGE_SIZE);
         mergeTransactions(txs, t, hm);
         if (!hm) break;
-        page += 1;
       }
       // Page numbering above is in ALL_PAGE_SIZE units, not loadMore's. That
       // only stays consistent because the loop exits with hasMore false, which
