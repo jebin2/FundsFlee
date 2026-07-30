@@ -34,10 +34,15 @@ LOCK_REFRESH_SECONDS = 60
 # a run is the per-message get, and those are gated by processed_ids.
 LIST_PAGE_SIZE = 500
 
-# A first run over an unfiltered mailbox can match tens of thousands of
-# messages. Cap the enumeration so one run stays bounded — oldest-first
-# ordering means the next run resumes where this one stopped.
+# How many messages one run will FETCH AND PARSE. Enumeration is deliberately
+# not capped to this: the ids have to be listed to the end before the oldest
+# unprocessed one is known, and truncating the listing would keep the newest N
+# — the same page every run, which is the bug this replaced.
 MAX_MESSAGES_PER_RUN = 2000
+
+# Safety valve on enumeration alone, in case a query matches an entire mailbox.
+# 200 pages of 500 is 100k ids; listing costs 5 quota units a page.
+MAX_LIST_PAGES = 200
 
 
 async def _list_all_message_ids(gmail, query: str) -> list[str]:
@@ -50,7 +55,7 @@ async def _list_all_message_ids(gmail, query: str) -> list[str]:
     ids: list[str] = []
     page_token: str | None = None
 
-    while len(ids) < MAX_MESSAGES_PER_RUN:
+    for _ in range(MAX_LIST_PAGES):
         res = await asyncio.to_thread(
             lambda t=page_token: gmail.users().messages().list(
                 userId="me", q=query, maxResults=LIST_PAGE_SIZE, pageToken=t
@@ -61,25 +66,47 @@ async def _list_all_message_ids(gmail, query: str) -> list[str]:
         if not page_token:
             return ids
 
-    log.warn("email", f"hit the {MAX_MESSAGES_PER_RUN}-message cap — "
-                      "the rest is picked up on the next run",
+    log.warn("email", f"stopped listing after {MAX_LIST_PAGES} pages",
              {"listed": len(ids)})
-    return ids[:MAX_MESSAGES_PER_RUN]
+    return ids
 
 
-def _is_retryable_reason(reason: str | None, msg_id: str, statuses: dict[str, str]) -> bool:
-    """Whether a group's skipReason is worth another run.
+def _select_pending(message_ids: list[str], processed_ids: set[str]) -> list[str]:
+    """Oldest unprocessed first, at most MAX_MESSAGES_PER_RUN of them.
 
-    parse_error means the AI chain raised — unreachable, rate-limited, 401 —
-    and always deserves a retry. ai_null is ambiguous: usually the model
-    correctly reporting no debit, occasionally it returning something that
-    wasn't JSON. Retrying it once distinguishes the two without looping on
-    every marketing email, so it counts only if this message has not already
-    come back from a failure.
+    Gmail lists newest-first, so the backlog is at the END. Two things have to
+    happen in this order: reverse, then cap. Capping the newest-first list
+    instead — or capping the listing itself — keeps the newest N, which is the
+    same set on every run and strands everything older permanently.
     """
-    if reason == "parse_error":
+    pending = [m for m in reversed(message_ids) if m not in processed_ids]
+    return pending[:MAX_MESSAGES_PER_RUN]
+
+
+def _group_hard_failed(reason: str | None) -> bool:
+    """A group that errored rather than reaching a verdict.
+
+    Only parse_error qualifies: the AI chain raised — unreachable, rate-limited,
+    401. ai_null deliberately does NOT. In a forwarded batch, a group holding a
+    delivery notice rather than a payment returns ai_null perfectly correctly,
+    and counting that as a failure would mark ordinary mail "partial" and claim
+    rows had been lost when none had.
+    """
+    return reason == "parse_error"
+
+
+def _should_retry_empty(reasons: list[str], msg_id: str, statuses: dict[str, str]) -> bool:
+    """Whether a message that produced NO rows deserves another run.
+
+    Safe to retry only because nothing was written. ai_null is ambiguous here,
+    where it is the whole message's verdict rather than one group's: usually the
+    model correctly reporting no debit, occasionally it returning something that
+    wasn't JSON. One retry distinguishes the two without looping forever on
+    every marketing email.
+    """
+    if any(_group_hard_failed(r) for r in reasons):
         return True
-    if reason == "ai_null":
+    if "ai_null" in reasons:
         return statuses.get(msg_id) not in RETRYABLE_STATUSES
     return False
 
@@ -127,29 +154,28 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             log.error("email", "gmail list failed", err)
             return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
-        # Gmail lists newest-first, so the unprocessed backlog is at the END.
-        # Walking it in that order meant every run re-walked the newest page and
-        # never reached older mail; oldest-first drains the backlog steadily.
-        message_ids.reverse()
-
-        log.info("email", f"found {len(message_ids)} emails")
-
         try:
             statuses = await get_email_statuses(session.access_token, session.sheet_id)
         except Exception:
             statuses = {}
         processed_ids = {m for m, st in statuses.items() if st not in RETRYABLE_STATUSES}
 
+        pending = _select_pending(message_ids, processed_ids)
+        pending_total = sum(1 for m in message_ids if m not in processed_ids)
+        capped = pending_total > len(pending)
+
+        log.info("email", f"found {len(message_ids)} emails",
+                 {"pending": len(pending), "capped": capped})
+        if capped:
+            log.warn("email", f"processing {MAX_MESSAGES_PER_RUN} this run — "
+                              "the next run continues from where this stops")
+
         result = {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
         new_tx_ids: list[str] = []
         today = today_iso()
 
-        for msg_id in message_ids:
+        for msg_id in pending:
             result["scanned"] += 1
-
-            if msg_id in processed_ids:
-                result["skipped"] += 1
-                continue
 
             # Keep the lock looking alive on a long run, so the daily cron does
             # not treat it as stale and import everything a second time — but at
@@ -228,7 +254,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     parsed_rows.append((tx, origin_subject, origin_from))
                 if parsed["skipReason"]:
                     skip_reasons.append(parsed["skipReason"])
-                if _is_retryable_reason(parsed["skipReason"], msg_id, statuses):
+                if _group_hard_failed(parsed["skipReason"]):
                     failed_groups += 1
 
             transactions = [tx for tx, _, _ in parsed_rows]
@@ -237,7 +263,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             if not transactions:
                 # Nothing was written, so retrying the whole message is free of
                 # duplicate risk — mark it failed and let the next run redo it.
-                retry = failed_groups > 0
+                retry = _should_retry_empty(skip_reasons, msg_id, statuses)
                 log.info("email", f'skipped "{subject}"',
                          {"reason": skip_reason, "willRetry": retry})
                 try:

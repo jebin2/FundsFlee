@@ -134,10 +134,15 @@ date.
 
 ## 6. What the email import revisits
 
-Gmail is listed with `nextPageToken` followed to the end, capped at
-`MAX_MESSAGES_PER_RUN`, then **reversed** — Gmail returns newest-first, so the
-unprocessed backlog is at the end. Without the reverse, a run re-walks the newest
-page and never reaches older mail.
+Gmail is listed with `nextPageToken` followed to the end. Then, in this order:
+**reverse** (Gmail returns newest-first, so the backlog is at the end), **filter
+out** what is already processed, **then** cap at `MAX_MESSAGES_PER_RUN`.
+
+The order matters more than it looks. Capping anywhere earlier — including
+capping the listing itself — keeps the newest N, which is the same set on every
+run and strands everything older permanently. That is the original bug, just at
+a larger number. The cap limits how many messages are *parsed*; enumeration is
+bounded only by `MAX_LIST_PAGES`, a safety valve.
 
 Every message ends with one row in `parsed_emails`. Only `failed` is retried:
 
@@ -153,9 +158,14 @@ wrong. A retry re-imports every group, and the duplicate scan only *flags*
 duplicates, so retrying a partially-imported message would leave real duplicate
 rows behind. That case is therefore made loud rather than repeated.
 
-`parse_error` (the AI chain raised) always counts as retryable. `ai_null` is
-ambiguous — usually the model correctly reporting no debit, occasionally a
-non-JSON response — so it is retried exactly once, which distinguishes the two
+Only `parse_error` (the AI chain raised) counts as a **group** failure. `ai_null`
+does not: in a forwarded batch, a group holding a delivery notice rather than a
+payment returns `ai_null` perfectly correctly, and counting it would mark
+ordinary mail `partial` and claim rows were lost when none were.
+
+As a **whole-message** verdict `ai_null` is ambiguous — usually the model
+correctly reporting no debit, occasionally a non-JSON response — so a message
+that produced nothing is retried exactly once, which distinguishes the two
 without looping forever on marketing email.
 
 ## Where paths still differ, and why
