@@ -37,10 +37,13 @@ class FakeSheets:
 
 @pytest.fixture
 def wired(tmp_path, monkeypatch):
+    """Steady state: the mirror already exists, as it does on every write after
+    the first. The bootstrap path gets its own tests below."""
     monkeypatch.setattr(conn_mod, "DB_DIR", tmp_path / "sheets")
     monkeypatch.setattr(hydrate_mod, "get_sheets_client", lambda token: FakeSheets())
     monkeypatch.setattr(hydrate_mod, "with_sheets_retry", lambda fn: fn())
     mirror._ready.clear()
+    hydrate_mod.hydrate_sync("tok", "s1")
     return tmp_path
 
 
@@ -48,15 +51,6 @@ class TestWritesReachTheMirror:
     def test_an_append_lands(self, wired):
         mirror.append("tok", "s1", "meta", [{"key": "region", "value": "IN"}])
         assert Repo(connect("s1"), spec("meta")).get(key="region")["value"] == "IN"
-
-    def test_it_hydrates_on_first_use(self, wired, monkeypatch):
-        # A write can be the first thing that touches a sheet after a restart.
-        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
-                            lambda token: FakeSheets({"meta!A2:B": [["region", "IN"]]}))
-        mirror.append("tok", "s1", "meta", [{"key": "days", "value": "7"}])
-
-        rows = Repo(connect("s1"), spec("meta")).all()
-        assert [r["key"] for r in rows] == ["region", "days"]
 
     def test_an_update_lands(self, wired):
         mirror.append("tok", "s1", "meta", [{"key": "region", "value": "IN"}])
@@ -87,6 +81,68 @@ class TestWritesReachTheMirror:
         mirror.append("tok", "s1", "meta", [{"key": "a"}])
         mirror.append("tok", "s1", "meta", [{"key": "b"}])
         assert calls == ["s1"]
+
+
+class TestTheFirstWriteAgainstAPopulatedSheet:
+    """No local mirror, sheet already has data — a rebuilt server, or the first
+    deploy of this feature. The write reaches the sheet first, so hydration
+    copies it in; applying it again would duplicate the row."""
+
+    def test_the_mirror_is_built_from_the_sheet(self, wired, monkeypatch):
+        sheet = {"meta!A2:B": [["region", "IN"], ["days", "7"], ["theme", "dark"]]}
+        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
+                            lambda token: FakeSheets(sheet))
+
+        # "theme" is the row this write just added to the sheet.
+        mirror.append("tok", "fresh", "meta", [{"key": "theme", "value": "dark"}])
+
+        rows = Repo(connect("fresh"), spec("meta")).all()
+        assert [(r["key"], r["_row"]) for r in rows] == [
+            ("region", 2), ("days", 3), ("theme", 4)]
+
+    def test_the_write_is_not_applied_twice(self, wired, monkeypatch):
+        sheet = {"meta!A2:B": [["region", "IN"], ["theme", "dark"]]}
+        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
+                            lambda token: FakeSheets(sheet))
+        mirror.append("tok", "fresh", "meta", [{"key": "theme", "value": "dark"}])
+
+        assert Repo(connect("fresh"), spec("meta")).count() == 2
+
+    def test_an_update_during_bootstrap_is_not_reapplied(self, wired, monkeypatch):
+        # The sheet already holds the new value; hydration copies it.
+        sheet = {"meta!A2:B": [["region", "UK"]]}
+        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
+                            lambda token: FakeSheets(sheet))
+        mirror.update("tok", "fresh", "meta", {"value": "UK"}, key="region")
+
+        rows = Repo(connect("fresh"), spec("meta")).all()
+        assert len(rows) == 1 and rows[0]["value"] == "UK"
+
+    def test_the_next_write_does_apply(self, wired, monkeypatch):
+        sheet = {"meta!A2:B": [["region", "IN"]]}
+        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
+                            lambda token: FakeSheets(sheet))
+        mirror.append("tok", "fresh", "meta", [{"key": "region", "value": "IN"}])
+        # Bootstrap is over; from here every write must land locally.
+        mirror.append("tok", "fresh", "meta", [{"key": "days", "value": "7"}])
+
+        assert [r["key"] for r in Repo(connect("fresh"), spec("meta")).all()] == [
+            "region", "days"]
+
+    def test_every_tab_comes_across(self, wired, monkeypatch):
+        sheet = {
+            "meta!A2:B": [["region", "IN"]],
+            "categories!A2:G": [["c1", "Food", "", "#f00", "cutlery", "true", "t"]],
+            "parsed_emails!A2:G": [["m1", "a@b.c", "Order", "t", "parsed", "", "1"]],
+        }
+        monkeypatch.setattr(hydrate_mod, "get_sheets_client",
+                            lambda token: FakeSheets(sheet))
+        mirror.append("tok", "fresh", "meta", [{"key": "region", "value": "IN"}])
+
+        conn = connect("fresh")
+        assert Repo(conn, spec("meta")).count() == 1
+        assert Repo(conn, spec("categories")).get(id="c1")["name"] == "Food"
+        assert Repo(conn, spec("parsed_emails")).get(email_id="m1")["status"] == "parsed"
 
 
 class TestFailuresDoNotBreakTheWrite:

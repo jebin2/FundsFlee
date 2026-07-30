@@ -314,6 +314,12 @@ It is one function over the registry, not six. If the sheet is also empty this
 is simply the onboarding path with nothing to copy, which is why cases 1 and 2
 share the code.
 
+**Hydration is triggered by the first write**, and every mirror call happens
+*after* its sheet write has succeeded. That ordering matters: the sheet already
+contains the write by then, so hydration copies it in, and applying it a second
+time would duplicate the row. `mirror._ensure` reports whether it built the
+mirror during this call, and the operation is skipped when it did.
+
 Hydration is recorded as `hydrated_at` in `_sync` so it runs exactly once per
 tab and can never re-run over live local data.
 
