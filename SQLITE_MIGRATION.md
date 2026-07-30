@@ -127,6 +127,113 @@ ordering.
 This does mean `rowid` must be stable, so `VACUUM` is off the table and the
 tables are `WITHOUT ROWID`-free (they need real rowids).
 
+## One schema, one engine
+
+This is the part that matters more than the storage choice.
+
+Today each tab has its own module — `transactions.py`, `categories.py`,
+`meta.py`, `parsed_emails.py`, `suggestions.py`, `analysis_cache.py`, 1732 lines
+— and each re-implements the same three operations: read all rows, append rows,
+update a row by id. They drifted apart, and the drift is where the bugs lived:
+
+- `parsed_emails` swallowed every exception and returned `[]`; `transactions`
+  did not
+- `meta` was the only module with no retry wrapper
+- `transactions` had a row-index cache; `parsed_emails` had to grow one later
+- `transaction_schema` had `A2:A5000`, silently ignoring row 5001
+
+Six implementations of one idea, each with a different subset of the fixes.
+
+**So: one declarative registry, and generic code driven by it. No per-tab
+branches anywhere.**
+
+### The registry
+
+`app/sheets/init.py` already has this, as a private detail:
+
+```python
+_TABS = (
+    ("transactions", EXPECTED_HEADERS),
+    ("categories", CATEGORIES_HEADERS),
+    ...
+)
+_HEADER_WRITES = [(f"{tab}!A1:{_col_letter(len(h))}1", h) for tab, h in _TABS]
+_DATA_RANGES  = [f"{tab}!A2:{_col_letter(len(h))}" for tab, h in _TABS]
+```
+
+Its comment records exactly why it exists: *"a hand-typed A2:Z is how column AA
+came to be skipped by both the header write and the reset."* The pattern is
+already proven — it just needs promoting from init's private helper to the one
+definition everything reads.
+
+```python
+@dataclass(frozen=True)
+class TabSpec:
+    name: str                  # tab name == table name
+    columns: tuple[str, ...]   # header tuple, in sheet order
+    key: str                   # the column holding the stable id
+
+TABS = (
+    TabSpec("transactions",    EXPECTED_HEADERS,         key="id"),
+    TabSpec("categories",      CATEGORIES_HEADERS,       key="id"),
+    TabSpec("analysis_cache",  ANALYSIS_CACHE_HEADERS,   key="id"),
+    TabSpec("item_suggestions", ITEM_SUGGESTIONS_HEADERS, key="key"),
+    TabSpec("meta",            META_HEADERS,             key="key"),
+    TabSpec("parsed_emails",   PARSED_EMAILS_HEADERS,    key="email_id"),
+)
+```
+
+### What is generated from it
+
+Everything. None of these is written per tab:
+
+| derived | from |
+|---|---|
+| `CREATE TABLE` DDL | `name`, `columns` |
+| the dirty triggers | `name` |
+| sheet header range and values | `name`, `columns` |
+| sheet data range `A2:{last}` | `name`, `columns` |
+| `INSERT` / `UPDATE` / `SELECT` SQL | `columns`, `key` |
+| hydration | the whole spec |
+| the sync push | the whole spec |
+| init and reset | the whole spec |
+
+### The engine
+
+One generic repository, six instances:
+
+```python
+class Repo:
+    def __init__(self, conn, spec: TabSpec): ...
+    def all(self) -> list[dict]: ...
+    def get(self, key: str) -> dict | None: ...
+    def insert(self, row: dict) -> int: ...        # returns rowid
+    def insert_many(self, rows: list[dict]): ...
+    def update(self, key: str, fields: dict): ...
+```
+
+Hydration, push, init and reset are each **one function taking a `TabSpec`**,
+called in a loop over `TABS`. Adding a tab is one line in the registry; adding a
+column is one entry in a header tuple.
+
+### Where per-tab code is still allowed
+
+Only where there is genuine domain logic, and only as a thin adapter over the
+generic repo — never re-implementing plumbing:
+
+- `row_to_transaction` typing and date normalisation
+- the transaction id/date validation in `transaction_schema`
+- `meta`'s key/value convenience wrappers
+
+The rule: **if it is about rows and ranges, it is generic; if it is about what a
+field means, it is domain.**
+
+### No dirty checks in application code
+
+Application code never reads or writes `_dirty`. Triggers set it, the syncer
+clears it. There is no `if dirty` in a service, a job, or a router — the same
+way no code today decides whether to flush a database transaction.
+
 ## The sync cycle
 
 An APScheduler interval job, alongside the existing daily cron in
@@ -187,11 +294,29 @@ the sheet*.
 | 6 | has data | unreadable (429, network, auth) | do nothing, leave `_dirty` alone, retry, surface staleness |
 | 7 | has data | hand-edited | that row is overwritten on its next push; the rest heals on the periodic full reconcile |
 
-**Case 2 is the one to get right.** It covers a rebuilt VPS, a lost disk, and
-the first deploy of this change — every existing user starts here. Hydration is
-recorded as `hydrated_at` in `_sync` so it runs exactly once per tab and can
-never re-run over live local data. It must insert in sheet order and skip no
-rows, because a gap would shift every subsequent row's identity.
+### Case 2 in full: no local database
+
+This is the bootstrap path and the one that must be exactly right, because
+every existing user starts here and so does every rebuilt server.
+
+On the first request for a `sheet_id` whose database file does not exist:
+
+1. Create `data/sheets/{sheet_id}.db` and run the DDL generated from `TABS`.
+2. For each `spec` in `TABS`, read `{spec.name}!A2:{last}` from the sheet and
+   insert every row **in sheet order**, so `rowid` lines up with the sheet line.
+   Rows are inserted verbatim — no parsing, no filtering, no skipping blanks in
+   the middle, because a gap shifts the identity of everything below it.
+3. Clear `_dirty` (the inserts fired the triggers) and set `hydrated_at`.
+4. Verify: row count per tab matches, and a checksum of the key column matches.
+   On mismatch, delete the file and fail loudly rather than serve half a
+   database.
+
+It is one function over the registry, not six. If the sheet is also empty this
+is simply the onboarding path with nothing to copy, which is why cases 1 and 2
+share the code.
+
+Hydration is recorded as `hydrated_at` in `_sync` so it runs exactly once per
+tab and can never re-run over live local data.
 
 Two further cases worth naming:
 
@@ -221,12 +346,16 @@ guidelines:
 Each phase is independently deployable and testable, which matters because this
 is running live.
 
-**Phase 0 — schema, no behaviour change.** `app/db/` with connection handling
-(WAL, `aiosqlite` or thread-offload), schema generated from the header tuples,
-migrations. Nothing reads it yet.
+**Phase 0 — registry and engine, no behaviour change.** Promote `_TABS` to a
+public `TabSpec` registry. `app/db/` with connection handling (WAL, `aiosqlite`
+or thread-offload), DDL and triggers generated from the registry, and the
+generic `Repo`. Nothing reads it yet. This phase is mostly deletion of
+duplicated plumbing.
 
-**Phase 1 — hydrate.** One-time import per `sheet_id`. Verify by comparing row
-counts and a checksum of ids against the sheet. Still nothing reads it.
+**Phase 1 — hydrate.** One generic function over `TABS`: if the local database
+is missing, create it from the registry and fill every tab from the sheet, in
+sheet order. Verify by comparing row counts and a checksum of ids per tab.
+Still nothing reads it.
 
 **Phase 2 — reads move to SQLite.** Behind the existing `app/sheets` facade, so
 call sites do not change. Reads are idempotent, so this is the low-risk half and
@@ -248,6 +377,7 @@ batching contortions. Every tab stays in the sheet; nothing is dropped.
 - `loadAll`, `MAX_ALL_PAGES`, `ALL_PAGE_SIZE`, the partial-history UI state
 - the 200-row page and its pagination maths in `_get_transactions_sync`
 - `_row_index_cache` and `_index_cache` — position is arithmetic now
+- five of the six per-tab sheet modules, replaced by one `Repo` over `TabSpec`
 - `with_sheets_retry` at every call site — only the syncer needs it
 - the "This year is wrong past 200 rows" bug, without writing an aggregate endpoint
 - `deduplicate_new_transactions`'s candidate scan, which becomes a SQL query,
