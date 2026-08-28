@@ -7,15 +7,19 @@ import time
 
 import httpx
 
-from app.ai.providers.opencode_provider import opencode_text
+from app.ai.providers.opencode_provider import auth_headers, opencode_text
+from app.config import settings
 
-OCR_BASE_URL = "https://jebin2-ocr.hf.space"
+
+def _base_url() -> str:
+    return (settings.ocr_api_url or "https://jebin2-ocr.hf.space").rstrip("/")
 
 
 async def opencode_image(image_base64: str, mime_type: str, text: str, system: str) -> str:
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    base = _base_url()
+    async with httpx.AsyncClient(timeout=30.0, headers=auth_headers()) as client:
         upload = await client.post(
-            f"{OCR_BASE_URL}/api/tasks/upload",
+            f"{base}/api/tasks/upload",
             files={"image": ("receipt.jpg", base64.b64decode(image_base64), mime_type)},
             data={"hide_from_ui": "true"},
         )
@@ -29,7 +33,7 @@ async def opencode_image(image_base64: str, mime_type: str, text: str, system: s
         deadline = time.monotonic() + 90.0
         while time.monotonic() < deadline:
             await asyncio.sleep(2.0)
-            poll = await client.get(f"{OCR_BASE_URL}/api/tasks/{task_id}")
+            poll = await client.get(f"{base}/api/tasks/{task_id}")
             if poll.status_code >= 400:
                 raise RuntimeError(f"OCR poll failed: {poll.status_code}")
             task = poll.json()

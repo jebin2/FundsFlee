@@ -12,9 +12,14 @@ def _base_url() -> str:
     return (settings.opencode_api_url or "https://opencode.voidall.com").rstrip("/")
 
 
+def auth_headers() -> dict[str, str]:
+    """X-API-Key for both TTT backends (OpenCode and OCR share one key)."""
+    return {"X-API-Key": settings.ttt_api_key} if settings.ttt_api_key else {}
+
+
 async def opencode_text(prompt: str, system: str) -> str:
     base = _base_url()
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, headers=auth_headers()) as client:
         submit = await client.post(
             f"{base}/api/tasks/upload",
             json={"text": prompt, "system_prompt": system, "model": "opencode"},

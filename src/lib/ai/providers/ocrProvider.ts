@@ -1,6 +1,6 @@
-import { opencodeText } from "./opencodeProvider";
+import { opencodeText, tttAuthHeaders } from "./opencodeProvider";
 
-const OCR_BASE_URL = "https://jebin2-ocr.hf.space";
+const OCR_BASE_URL = (process.env.OCR_API_URL ?? "https://jebin2-ocr.hf.space").replace(/\/$/, "");
 
 export async function opencodeImage(
   imageBase64: string,
@@ -15,6 +15,7 @@ export async function opencodeImage(
 
   const uploadRes = await fetch(`${OCR_BASE_URL}/api/tasks/upload`, {
     method: "POST",
+    headers: tttAuthHeaders(),
     body: form,
   });
   if (!uploadRes.ok) throw new Error(`OCR upload failed: ${uploadRes.status}`);
@@ -25,7 +26,9 @@ export async function opencodeImage(
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 2000));
-    const pollRes = await fetch(`${OCR_BASE_URL}/api/tasks/${taskId}`);
+    const pollRes = await fetch(`${OCR_BASE_URL}/api/tasks/${taskId}`, {
+      headers: tttAuthHeaders(),
+    });
     if (!pollRes.ok) throw new Error(`OCR poll failed: ${pollRes.status}`);
     const task = await pollRes.json() as { status: string; result?: string; error?: string };
     if (task.status === "completed") {

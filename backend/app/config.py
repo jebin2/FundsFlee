@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
     opencode_api_url: str = "https://opencode.voidall.com"
+    ocr_api_url: str = "https://jebin2-ocr.hf.space"
+    # Sent as X-API-Key on every call to either TTT backend (OpenCode and OCR
+    # share one key); they reject requests without it.
+    ttt_api_key: str = ""
 
     # Web push (VAPID)
     vapid_public_key: str = ""
