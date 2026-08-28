@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # google-auth-service FileUserStore (users + Google credentials)
     user_store_file: str = "data/users.json"
 
+    # Where nightly snapshots go. The default is on the same disk as the data
+    # it protects, which covers corruption and mistakes but not losing the
+    # machine — point this at another volume if you have one.
+    backup_dir: str = "data/backups"
+
     # Built SPA to serve (single-origin deploy). Empty → default ../frontend/dist
     # relative to the repo; unset/missing in dev (SPA runs on the Vite dev server).
     frontend_dist: str = ""

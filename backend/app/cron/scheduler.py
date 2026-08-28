@@ -13,6 +13,7 @@ from app.core.cron_store import load_cron_session
 from app.core.deps import SheetSession
 from app.core.google_oauth import refresh_google_token
 from app.core.logger import log
+from app.db.backup import run_backup
 from app.jobs.analysis_job import run_analysis_job
 from app.jobs.comparison_job import run_comparison_job
 from app.jobs.email_import_job import run_email_import_job
@@ -155,10 +156,23 @@ def init_cron_scheduler() -> AsyncIOScheduler:
         log.info("cron", "daily job triggered at 12:00 IST")
         await run_daily_jobs()
 
+    async def _backup():
+        try:
+            await run_backup()
+        except Exception as err:
+            # A failed backup must never take the scheduler down with it —
+            # but it must be loud, because the failure mode of a silent backup
+            # is discovering it on the day you need it.
+            log.error("cron", "backup failed", err)
+
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(_job, CronTrigger(hour=12, minute=0, timezone="Asia/Kolkata"))
+    # Well away from the noon jobs: the mirror is quiet at this hour, so the
+    # snapshot is small and nothing competes with it.
+    _scheduler.add_job(_backup, CronTrigger(hour=3, minute=30, timezone="Asia/Kolkata"),
+                       max_instances=1, coalesce=True)
     _scheduler.start()
-    log.info("cron", "scheduler initialised — daily at 12:00 IST")
+    log.info("cron", "scheduler initialised — jobs at 12:00 IST, backup at 03:30 IST")
     return _scheduler
 
 
