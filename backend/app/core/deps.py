@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException, Request
 
 from app.core.auth import google_auth, user_store
+from app.cron.sync_scheduler import remember_owner
 
 
 @dataclass
@@ -51,6 +52,10 @@ async def require_session(request: Request) -> SheetSession:
     access_token = await google_auth.get_google_access_token(user["user_id"])
     if not access_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # The syncer runs on a timer, with no request to borrow a token from. This
+    # is where it learns whose credentials to use for this sheet.
+    remember_owner(user["sheet_id"], user["user_id"])
 
     credentials = await user_store.get_credentials(user["user_id"]) or {}
     return SheetSession(

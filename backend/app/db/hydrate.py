@@ -95,9 +95,9 @@ def _hydrate_tab(conn, sheets, sheet_id: str, spec: TabSpec) -> int:
         raise RuntimeError(f"{spec.name}: checksum mismatch after hydration")
 
     # These rows came FROM the sheet, so they are not pending changes. The
-    # inserts fired the dirty triggers, and leaving those marks would make the
-    # first sync rewrite the whole sheet with what it already contains.
-    conn.execute("DELETE FROM _dirty WHERE tab = ?", (spec.name,))
+    # inserts queued them in the outbox, and leaving them there would make the
+    # first push rewrite the whole sheet with what it already contains.
+    conn.execute("DELETE FROM _outbox WHERE tab = ?", (spec.name,))
     conn.execute(
         "INSERT INTO _sync(tab, hydrated_at, last_row_pushed) "
         "VALUES (?, datetime('now'), ?) "

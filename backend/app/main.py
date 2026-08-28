@@ -30,12 +30,15 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.cron.scheduler import init_cron_scheduler, shutdown_cron_scheduler
+    from app.cron.sync_scheduler import init_sync_scheduler, shutdown_sync_scheduler
 
     init_cron_scheduler()  # daily 12:00 IST jobs
+    init_sync_scheduler()  # local changes -> the sheet, every minute
     try:
         yield
     finally:
         shutdown_cron_scheduler()
+        await shutdown_sync_scheduler()
 
 
 app = FastAPI(title="FundsFlee API", version="1.0.0", lifespan=lifespan)

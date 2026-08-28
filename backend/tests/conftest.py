@@ -44,7 +44,7 @@ def seed():
             width = len(s.columns)
             Repo(conn, s).insert_rows(
                 [[*r[:width], *[""] * (width - len(r))] for r in rows])
-            conn.execute("DELETE FROM _dirty")
+            conn.execute("DELETE FROM _outbox")
         finally:
             conn.close()
     return _seed

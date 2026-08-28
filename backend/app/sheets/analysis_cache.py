@@ -13,7 +13,7 @@ from googleapiclient.http import MediaInMemoryUpload
 from app.core.dates import now_iso, today_iso
 from app.db import mirror
 from app.db.registry import ANALYSIS_CACHE_HEADERS
-from app.sheets.client import get_drive_client, get_sheets_client
+from app.sheets.client import get_drive_client
 from app.sheets.drive import get_or_create_receipts_folder_sync
 
 # If JSON is larger than this, store it in Drive instead of the cell
@@ -92,27 +92,16 @@ def _upsert_analysis_cache_row_sync(
     summary_json: str = "",
     drive_file_id: str = "",
 ) -> None:
-    sheets = get_sheets_client(access_token)
     rows = _read_rows_sync(access_token, sheet_id)
-    values = [[str(uuid.uuid4()), period, period_type, summary_json, now_iso(), status, drive_file_id]]
-    idx = next((i for i, r in enumerate(rows) if _at(r, 1) == period), -1)
-    record = dict(zip(ANALYSIS_CACHE_HEADERS, values[0]))
+    values = [str(uuid.uuid4()), period, period_type, summary_json, now_iso(), status, drive_file_id]
+    record = dict(zip(ANALYSIS_CACHE_HEADERS, values))
 
+    # One row per period: overwrite the existing one rather than stacking a new
+    # row on every regeneration.
+    idx = next((i for i, r in enumerate(rows) if _at(r, 1) == period), -1)
     if idx >= 0:
-        sheets.spreadsheets().values().update(
-            spreadsheetId=sheet_id,
-            range=f"analysis_cache!A{idx + 2}:G{idx + 2}",
-            valueInputOption="RAW",
-            body={"values": values},
-        ).execute()
         mirror.update_row(access_token, sheet_id, "analysis_cache", idx + 2, record)
     else:
-        sheets.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range="analysis_cache!A2",
-            valueInputOption="RAW",
-            body={"values": values},
-        ).execute()
         mirror.append(access_token, sheet_id, "analysis_cache", [record])
 
 

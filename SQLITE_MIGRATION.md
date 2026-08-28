@@ -86,11 +86,11 @@ which is what makes the position-is-identity mapping below work at all.
 
 ### Where the bookkeeping lives
 
-`_dirty` and `_sync` live in the mirror file, underscore-prefixed. All six tabs
+`_outbox` and `_sync` live in the mirror file, underscore-prefixed. All six tabs
 are still exact mirrors; these two are visibly not tabs.
 
 ```sql
-_dirty(tab TEXT, row_num INTEGER, PRIMARY KEY (tab, row_num))
+_outbox(tab TEXT, row_num INTEGER)          -- append-only; rowid is the sequence
 _sync(tab TEXT PRIMARY KEY, hydrated_at TEXT, last_push_at TEXT,
       last_row_pushed INTEGER, last_error TEXT)
 ```
@@ -106,7 +106,7 @@ Marking is done by triggers on every mirrored table:
 
 ```sql
 CREATE TRIGGER transactions_dirty_insert AFTER INSERT ON transactions
-  BEGIN INSERT OR IGNORE INTO _dirty VALUES ('transactions', new.rowid); END;
+  BEGIN INSERT INTO _outbox VALUES ('transactions', new.rowid + 1); END;
 ```
 
 Application code never marks anything dirty — it writes a row and the tracking
@@ -229,37 +229,75 @@ field means, it is domain.**
 
 ### No dirty checks in application code
 
-Application code never reads or writes `_dirty`. Triggers set it, the syncer
+Application code never reads or writes `_outbox`. Triggers fill it, the syncer
 clears it. There is no `if dirty` in a service, a job, or a router — the same
 way no code today decides whether to flush a database transaction.
 
 ## The sync cycle
 
-An APScheduler interval job, alongside the existing daily cron in
-`app/cron/scheduler.py`. Every 30s:
+An APScheduler interval job in `app/cron/sync_scheduler.py`, alongside the
+existing daily cron. Every 60s:
 
-1. Find databases with a non-empty `_dirty`. **None → return without a single
+1. Find databases with a non-empty `_outbox`. **None → return without a single
    API call.** An idle app makes no requests at all.
-2. For each, get an access token the way `run_daily_jobs` already does —
-   `refresh_google_token(stored["refreshToken"])`. (That path currently serves
-   one stored user; the syncer needs it per user with dirty rows.)
-3. Per dirty tab, read the dirty row numbers and collapse them into ranges:
-   - **contiguous rows past `last_row_pushed`** → one `values.update` over
-     `tab!A{first}:{last}` with those rows' values. This is the bulk import
-     case: 2000 new rows go out as one request.
-   - **scattered edits** → one `values.batchUpdate` carrying a range per run of
-     adjacent rows. Editing one transaction is one range.
-   - **deletes** → there are none.
-4. Clear those `_dirty` entries only after the call succeeds. A failure leaves
-   them, so the next cycle retries; no separate queue, no lost writes.
+2. For each, get an access token. The work list comes from the disk rather than
+   from a list of logged-in users, because after a restart nobody is signed in
+   and the changes still have to go out. Two sources, in order: a user seen this
+   process (`remember_owner`, called from `require_session` — the auth library
+   already holds and refreshes their credentials), then the stored cron session,
+   which is what makes an unattended server work. A sheet with neither stays
+   queued; nothing is lost by waiting.
+3. Per tab, claim everything queued up to a high-water `rowid`, collapse the row
+   numbers into contiguous runs, and write each run as one `ValueRange` in a
+   single `values.batchUpdate`. Updates and appends are the same operation —
+   whole rows written at their own addresses.
+4. Clear the claimed entries only after the call succeeds. A failure leaves them,
+   so the next cycle retries. Failures are isolated per tab: a quota error on
+   `transactions` must not strand a two-row settings save.
 
 Because row number is `rowid + 1`, every range is computed arithmetically —
-nothing has to be looked up, in the sheet or in a cache.
+nothing is looked up, in the sheet or in a cache.
 
-**Cost: one or two requests per dirty tab per cycle, regardless of row count.**
-With all six tabs mirrored that is a ceiling of about twelve requests a cycle in
-the worst case where everything changed at once — against a quota of sixty a
-minute, and against the thousands a single import spends today.
+**Measured cost:** a 50-message email import makes **zero** API calls while it
+runs, and goes out in **5 requests** on the next tick. A first push of 5000 rows
+is 4 requests. One edit on a 5050-row sheet is 2. An idle tick is 0.
+
+### Why the outbox is a queue, not a set of marks
+
+`_dirty` was a deduped `(tab, row_num)` table. That cannot be claimed safely: an
+upsert leaves the row's `rowid` where it was, so a write landing *during* a push
+would have its mark deleted by the push it was not part of — and that change
+would never reach the sheet.
+
+`_outbox` is append-only, and its implicit `rowid` is the sequence number. The
+syncer claims up to a high-water mark, pushes, and deletes only up to that mark.
+A write that lands mid-push gets a higher `rowid` and survives. It grows only
+within one interval, and every push empties it.
+
+### Why whole rows, and why exact addresses
+
+Every push writes **whole rows**, not changed cells. That is what makes a push
+idempotent: a retry after a 429 rewrites the same values rather than having to
+work out what the previous attempt managed to send. It is also why a failure can
+simply leave the queue alone.
+
+Rows are addressed **exactly** (`tab!A{first}:{last}`), never with
+`values.append`. `append` positions itself after the last row *holding data*,
+which is not the same as the last row the mirror knows about: blanking the last
+category row moves the landing spot up by one and puts the two stores
+permanently out of step. Exact addressing has one cost — `values.update` refuses
+a range past the grid, and a new spreadsheet stops at 1000 rows — so the syncer
+tracks each tab's capacity and grows it with `appendDimension` when needed. The
+capacity is read once per process and then tracked through its own growth; a
+stale reading heals by re-reading rather than stalling.
+
+### One interpreted column
+
+`valueInputOption` is per request, so the transactions `date` column is written
+in a second request as `USER_ENTERED` while everything else goes `RAW`. Doing
+the whole row as `USER_ENTERED` would evaluate a merchant like `=Zomato` as a
+formula and reformat every ISO timestamp on it. Which columns those are is
+declared on the `TabSpec` (`user_entered`), not branched on in the syncer.
 
 ### Full rewrite as the repair path
 
@@ -286,11 +324,11 @@ the sheet*.
 | # | local | sheet | action |
 |---|---|---|---|
 | 1 | empty | empty | fresh onboarding — create both, as today |
-| 2 | **empty** | **has data** | **hydrate**: read the sheet once, insert rows in sheet order so `rowid` lines up, clear `_dirty`, set `hydrated_at`. Never push in this state. |
+| 2 | **empty** | **has data** | **hydrate**: read the sheet once, insert rows in sheet order so `rowid` lines up, clear `_outbox`, set `hydrated_at`. Never push in this state. |
 | 3 | has data | has data, local dirty | normal: push the delta |
 | 4 | has data | has data, clean | no API call |
 | 5 | has data | tab missing / empty | sheet was reset or deleted → recreate the tab with its header and full-rewrite the table into it |
-| 6 | has data | unreadable (429, network, auth) | do nothing, leave `_dirty` alone, retry, surface staleness |
+| 6 | has data | unreadable (429, network, auth) | do nothing, leave `_outbox` alone, retry, surface staleness |
 | 7 | has data | hand-edited | that row is overwritten on its next push; the rest heals on the periodic full reconcile |
 
 ### Case 2 in full: no local database
@@ -305,7 +343,7 @@ On the first request for a `sheet_id` whose database file does not exist:
    insert every row **in sheet order**, so `rowid` lines up with the sheet line.
    Rows are inserted verbatim — no parsing, no filtering, no skipping blanks in
    the middle, because a gap shifts the identity of everything below it.
-3. Clear `_dirty` (the inserts fired the triggers) and set `hydrated_at`.
+3. Clear `_outbox` (the inserts fired the triggers) and set `hydrated_at`.
 4. Verify: row count per tab matches, and a checksum of the key column matches.
    On mismatch, delete the file and fail loudly rather than serve half a
    database.
@@ -340,7 +378,7 @@ guidelines:
    deleted everything". Without this, one failed hydration blanks the sheet.
 2. **Never delete a row in either store.** Soft-delete only, as today.
 3. **Hydration runs only when local is empty and `hydrated_at` is unset.**
-4. **Clear `_dirty` entries only after a confirmed successful write.**
+4. **Clear `_outbox` entries only after a confirmed successful write.**
 5. **Never delete a local row, and never `VACUUM`.** Row position is row
    identity; renumbering silently repoints every row at the wrong sheet line.
 6. **A read failure must raise, never return empty.** Exactly the bug fixed in
@@ -394,12 +432,30 @@ write paths (finding a meta key's row, a category's row, a transaction's row).
 *Reads now cost nothing. The 200-row page is a slice, and "This year" is a
 filter over the whole history rather than over page one.*
 
-**Phase 3b — the syncer.** Direct sheet writes are replaced by the dirty-row
-push; Sheets stops being written synchronously at all.
+**Phase 3b — the syncer.** *(done — `app/db/sync.py`,
+`app/cron/sync_scheduler.py`)* Writes land in the mirror and return; the sheet is
+caught up on a 60s interval, plus once on clean shutdown. `app/sheets` no longer
+touches the Sheets API on any data path — only `init.py` (create and reset),
+`migrations.py` (tab and header structure), `hydrate.py` (in), `sync.py` (out)
+and `verify.py` (audit) do.
 
-**Phase 4 — remove the scaffolding.** Delete the direct-write paths, the row
-index caches in `transactions.py` and `parsed_emails.py`, and the quota-driven
-batching contortions. Every tab stays in the sheet; nothing is dropped.
+Two things changed shape in this phase, both because the write ordering
+reversed:
+
+- `_dirty` became `_outbox` (see above). The old table is dropped on first open;
+  nothing is lost, because while it was in use every write reached the sheet
+  first.
+- The bootstrap guard was **removed**. Phase 2 skipped the write that triggered
+  hydration, because the sheet already contained it. It does not any more, so
+  keeping that skip would silently drop the first write after every rebuild.
+
+Also gone: `transaction_update_to_cells` / `fields_to_cells` / `letter`, which
+existed to address individual sheet cells.
+
+**Phase 4 — remove the scaffolding.** Dual-write is already gone with 3b. What
+remains: fold the five per-tab modules into `Repo`, drop the quota-driven
+batching contortions in the import job, and retire `verify_mirror.py` from its
+role as a phase gate. Every tab stays in the sheet; nothing is dropped.
 
 ## What this deletes
 
@@ -414,8 +470,8 @@ batching contortions. Every tab stays in the sheet; nothing is dropped.
 
 ## Risks
 
-- **The VPS disk becomes the database.** Today a server loss costs nothing.
-  After this it costs up to one sync interval. Backup stops being optional —
+- **The VPS disk becomes the database.** Before this a server loss cost nothing.
+  Now it costs up to one sync interval — 60 seconds of writes. Backup stops being optional —
   and `data/users.json` is already in that category, currently unbacked.
 - **Schema drift** between SQLite and the sheet — mitigated by generating both
   from one definition.

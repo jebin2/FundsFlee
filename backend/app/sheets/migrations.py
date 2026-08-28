@@ -3,10 +3,16 @@ Sync functions (call off the event loop); per-process memo sets avoid
 re-checking the same sheet."""
 from googleapiclient.errors import HttpError
 
-from app.sheets.headers import EXPECTED_HEADERS, PARSED_EMAILS_HEADERS
+from app.db.registry import spec
+from app.sheets.headers import (
+    EXPECTED_HEADERS,
+    ITEM_SUGGESTIONS_HEADERS,
+    PARSED_EMAILS_HEADERS,
+)
 
 _schema_checked: set[str] = set()
 _parsed_emails_tab_checked: set[str] = set()
+_item_suggestions_tab_checked: set[str] = set()
 
 # Derived so adding a column to the header tuple is the only edit needed.
 _PARSED_EMAILS_LAST_COL = chr(ord("A") + len(PARSED_EMAILS_HEADERS) - 1)
@@ -126,3 +132,31 @@ def ensure_transaction_schema_sync(sheets, sheet_id: str) -> None:
         body={"values": [list(EXPECTED_HEADERS)]},
     ).execute()
     _schema_checked.add(sheet_id)
+
+
+def ensure_item_suggestions_tab_sync(sheets, sheet_id: str) -> None:
+    """The tab is newer than the oldest sheets, so it may not exist. It has to,
+    or the syncer's push for it fails on every tick."""
+    if sheet_id in _item_suggestions_tab_checked:
+        return
+    _item_suggestions_tab_checked.add(sheet_id)
+    meta = sheets.spreadsheets().get(
+        spreadsheetId=sheet_id, fields="sheets.properties.title"
+    ).execute()
+    exists = any(
+        s.get("properties", {}).get("title") == "item_suggestions"
+        for s in meta.get("sheets") or []
+    )
+    if exists:
+        return
+
+    sheets.spreadsheets().batchUpdate(
+        spreadsheetId=sheet_id,
+        body={"requests": [{"addSheet": {"properties": {"title": "item_suggestions"}}}]},
+    ).execute()
+    sheets.spreadsheets().values().update(
+        spreadsheetId=sheet_id,
+        range=spec("item_suggestions").header_range,
+        valueInputOption="RAW",
+        body={"values": [list(ITEM_SUGGESTIONS_HEADERS)]},
+    ).execute()

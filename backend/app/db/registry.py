@@ -52,10 +52,16 @@ class TabSpec:
             the column letters and therefore every range.
     key     is the column(s) identifying a row. Composite for item_suggestions,
             which is keyed by (key, field).
+    user_entered
+            columns the sheet must interpret rather than store verbatim. Only
+            transactions.date: everything else goes RAW, because USER_ENTERED
+            applies per cell and would evaluate a merchant like "=Zomato" as a
+            formula and reformat the ISO timestamps in created_at/updated_at.
     """
     name: str
     columns: tuple[str, ...]
     key: tuple[str, ...]
+    user_entered: tuple[str, ...] = ()
 
     @property
     def last_col(self) -> str:
@@ -77,6 +83,10 @@ class TabSpec:
     def block_range(self, first_row: int, last_row: int) -> str:
         return f"{self.name}!A{first_row}:{self.last_col}{last_row}"
 
+    def column_range(self, column: str, first_row: int, last_row: int) -> str:
+        c = col_letter(self.columns.index(column) + 1)
+        return f"{self.name}!{c}{first_row}:{c}{last_row}"
+
     def to_row(self, record: dict) -> list[str]:
         """Record -> a sheet/SQLite row, in column order. Missing fields become
         empty strings, never None, because the sheet has no concept of null."""
@@ -84,7 +94,8 @@ class TabSpec:
 
 
 TABS: tuple[TabSpec, ...] = (
-    TabSpec("transactions", EXPECTED_HEADERS, key=("id",)),
+    TabSpec("transactions", EXPECTED_HEADERS, key=("id",),
+            user_entered=("date",)),
     TabSpec("categories", CATEGORIES_HEADERS, key=("id",)),
     TabSpec("analysis_cache", ANALYSIS_CACHE_HEADERS, key=("id",)),
     TabSpec("item_suggestions", ITEM_SUGGESTIONS_HEADERS, key=("key", "field")),

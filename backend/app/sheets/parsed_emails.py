@@ -11,11 +11,9 @@ from typing import TypedDict
 from app.db import mirror
 from app.db.repo import ROW_FIELD
 from app.db.registry import PARSED_EMAILS_HEADERS
-from app.sheets.client import get_sheets_client, with_sheets_retry
 
 COLS = {"email_id": 0, "from": 1, "subject": 2, "parsed_at": 3, "status": 4,
         "tx_ids": 5, "attempts": 6}
-LAST_COL = "G"
 
 # Statuses the import will look at again on the next run. A failure means the
 # AI chain was unreachable or returned nothing usable — a transient condition —
@@ -114,7 +112,6 @@ def _row_number_of(access_token: str, sheet_id: str, email_id: str) -> int | Non
 # Write a processing result for one email.
 async def record_parsed_email(access_token: str, sheet_id: str, record: dict) -> None:
     def work():
-        sheets = get_sheets_client(access_token)
         row = [
             record["emailId"],
             record["from"][:100],
@@ -124,32 +121,17 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
             ",".join(record["txIds"]),
             str(record.get("attempts", 1)),
         ]
+        fields = dict(zip(PARSED_EMAILS_HEADERS, row))
 
         # Upsert, because a failed email is retried on the next run: appending
         # would leave a second row for the same message and quietly inflate the
         # scanned/failed counts in settings.
-        record_fields = dict(zip(PARSED_EMAILS_HEADERS, row))
-
         existing_row = _row_number_of(access_token, sheet_id, record["emailId"])
         if existing_row is not None:
-            with_sheets_retry(lambda: sheets.spreadsheets().values().update(
-                spreadsheetId=sheet_id,
-                range=f"parsed_emails!A{existing_row}:{LAST_COL}{existing_row}",
-                valueInputOption="RAW",
-                body={"values": [row]},
-            ).execute())
             mirror.update_row(access_token, sheet_id, "parsed_emails",
-                              existing_row, record_fields)
-            return
-
-        with_sheets_retry(lambda: sheets.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range="parsed_emails!A2",
-            valueInputOption="RAW",
-            body={"values": [row]},
-        ).execute())
-
-        mirror.append(access_token, sheet_id, "parsed_emails", [record_fields])
+                              existing_row, fields)
+        else:
+            mirror.append(access_token, sheet_id, "parsed_emails", [fields])
 
     await asyncio.to_thread(work)
 

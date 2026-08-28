@@ -136,7 +136,7 @@ class TestHydratedRowsAreNotPendingChanges:
         mod.hydrate_sync("tok", "sheet_abc")
 
         conn = connect("sheet_abc")
-        assert conn.execute("SELECT COUNT(*) FROM _dirty").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM _outbox").fetchone()[0] == 0
 
     def test_hydration_is_recorded(self, sheets_dir, monkeypatch):
         _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a")]}))
@@ -155,7 +155,7 @@ class TestHydratedRowsAreNotPendingChanges:
 
         conn = connect("sheet_abc")
         Repo(conn, spec("meta")).update({"value": "UK"}, key="region")
-        assert conn.execute("SELECT COUNT(*) FROM _dirty").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM _outbox").fetchone()[0] == 1
 
 
 class TestItRunsOnce:

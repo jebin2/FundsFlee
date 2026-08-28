@@ -12,38 +12,12 @@ status = pending | accepted | rejected
 """
 import asyncio
 
-
 from app.core.dates import now_iso
 from app.db import mirror
-from app.sheets.client import get_sheets_client
-from app.sheets.headers import ITEM_SUGGESTIONS_HEADERS
 
 
 def _at(r: list, i: int) -> str:
     return r[i] if i < len(r) and r[i] is not None else ""
-
-
-def ensure_item_suggestions_tab_sync(sheets, sheet_id: str) -> None:
-    meta = sheets.spreadsheets().get(
-        spreadsheetId=sheet_id, fields="sheets.properties.title"
-    ).execute()
-    exists = any(
-        s.get("properties", {}).get("title") == "item_suggestions"
-        for s in meta.get("sheets") or []
-    )
-    if exists:
-        return
-
-    sheets.spreadsheets().batchUpdate(
-        spreadsheetId=sheet_id,
-        body={"requests": [{"addSheet": {"properties": {"title": "item_suggestions"}}}]},
-    ).execute()
-    sheets.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range="item_suggestions!A1:G1",
-        valueInputOption="RAW",
-        body={"values": [list(ITEM_SUGGESTIONS_HEADERS)]},
-    ).execute()
 
 
 def read_suggestion_rows_sync(access_token: str, sheet_id: str) -> list[list]:
@@ -76,8 +50,6 @@ async def append_item_suggestions(
         return
 
     def work():
-        sheets = get_sheets_client(access_token)
-
         # Dedup against existing — never overwrite an existing entry (any status)
         rows = read_suggestion_rows_sync(access_token, sheet_id)
         existing_keys = {f"{_at(r, 0)}::{_at(r, 1)}" for r in rows}
@@ -99,16 +71,6 @@ async def append_item_suggestions(
             return
 
         now = now_iso()
-        sheets.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range="item_suggestions!A2",
-            valueInputOption="RAW",
-            body={"values": [
-                [s["key"], s["field"], s["current_val"], s["suggested"], s["source"], "pending", now]
-                for s in to_add
-            ]},
-        ).execute()
-
         mirror.append(access_token, sheet_id, "item_suggestions", [{
             "key": s["key"], "field": s["field"], "current_val": s["current_val"],
             "suggested": s["suggested"], "source": s["source"],
@@ -122,22 +84,8 @@ async def resolve_item_suggestion(
     access_token: str, sheet_id: str, key: str, field: str, status: str
 ) -> None:
     def work():
-        sheets = get_sheets_client(access_token)
-        rows = read_suggestion_rows_sync(access_token, sheet_id)
-        idx = next(
-            (i for i, r in enumerate(rows) if _at(r, 0) == key and _at(r, 1) == field), -1
-        )
-        if idx < 0:
-            return
-        now = now_iso()
-        sheets.spreadsheets().values().update(
-            spreadsheetId=sheet_id,
-            range=f"item_suggestions!F{idx + 2}:G{idx + 2}",
-            valueInputOption="RAW",
-            body={"values": [[status, now]]},
-        ).execute()
-
         mirror.update(access_token, sheet_id, "item_suggestions",
-                      {"status": status, "updated_at": now}, key=key, field=field)
+                      {"status": status, "updated_at": now_iso()},
+                      key=key, field=field)
 
     await asyncio.to_thread(work)

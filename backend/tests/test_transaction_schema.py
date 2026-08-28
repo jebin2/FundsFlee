@@ -4,10 +4,9 @@ from app.sheets.transaction_schema import (
     COLS,
     idx,
     is_deleted_row,
-    letter,
     row_to_transaction,
     transaction_to_row,
-    transaction_update_to_cells,
+    transaction_update_to_fields,
 )
 
 BASE_TX = {
@@ -129,44 +128,50 @@ class TestIsDeletedRow:
         assert is_deleted_row(row) is False
 
 
-class TestTransactionUpdateToCells:
+class TestTransactionUpdateToFields:
+    """The one normalisation a partial update goes through.
+
+    It used to feed a batch of sheet cell writes; it now feeds a local row
+    update. Same rules either way — what a boolean, a tag list and updated_at
+    turn into on their way to storage.
+    """
     FIXED_NOW = "2025-04-26T15:00:00.000Z"
 
-    def test_always_includes_updated_at_in_the_batch(self):
-        cells = transaction_update_to_cells({"merchant": "Zomato"}, 5, self.FIXED_NOW)
-        ranges = [c["range"] for c in cells]
-        assert f"transactions!{letter('updated_at')}5" in ranges
-        assert f"transactions!{letter('merchant')}5" in ranges
+    def test_always_includes_updated_at(self):
+        fields = transaction_update_to_fields({"merchant": "Zomato"}, self.FIXED_NOW)
+        assert fields["updated_at"] == self.FIXED_NOW
+        assert fields["merchant"] == "Zomato"
 
-    def test_uses_the_correct_row_number_in_the_range(self):
-        cells = transaction_update_to_cells({"category": "Transport"}, 42, self.FIXED_NOW)
-        for c in cells:
-            assert c["range"].endswith("42")
+    def test_touches_only_the_updated_columns(self):
+        fields = transaction_update_to_fields({"category": "Transport"}, self.FIXED_NOW)
+        assert set(fields) == {"category", "updated_at"}
 
     def test_serialises_is_duplicate_update_as_TRUE_FALSE(self):
-        cells = transaction_update_to_cells({"is_duplicate": True}, 3, self.FIXED_NOW)
-        dup_cell = next(c for c in cells if letter("is_duplicate") in c["range"])
-        assert dup_cell["values"][0][0] == "TRUE"
+        assert transaction_update_to_fields(
+            {"is_duplicate": True}, self.FIXED_NOW)["is_duplicate"] == "TRUE"
+        assert transaction_update_to_fields(
+            {"is_duplicate": False}, self.FIXED_NOW)["is_duplicate"] == "FALSE"
 
     def test_serialises_deleted_true_as_TRUE_false_as_empty_string(self):
-        cells_true = transaction_update_to_cells({"deleted": True}, 3, self.FIXED_NOW)
-        true_cell = next(c for c in cells_true if letter("deleted") in c["range"])
-        assert true_cell["values"][0][0] == "TRUE"
-
-        cells_false = transaction_update_to_cells({"deleted": False}, 3, self.FIXED_NOW)
-        false_cell = next(c for c in cells_false if letter("deleted") in c["range"])
-        assert false_cell["values"][0][0] == ""
+        assert transaction_update_to_fields(
+            {"deleted": True}, self.FIXED_NOW)["deleted"] == "TRUE"
+        assert transaction_update_to_fields(
+            {"deleted": False}, self.FIXED_NOW)["deleted"] == ""
 
     def test_joins_tags_array_before_writing(self):
-        cells = transaction_update_to_cells({"tags": ["a", "b"]}, 3, self.FIXED_NOW)
-        tags_cell = next(c for c in cells if letter("tags") in c["range"])
-        assert tags_cell["values"][0][0] == "a,b"
+        assert transaction_update_to_fields(
+            {"tags": ["a", "b"]}, self.FIXED_NOW)["tags"] == "a,b"
 
-    def test_does_not_include_id_or_created_at_columns(self):
-        cells = transaction_update_to_cells({"merchant": "X"}, 3, self.FIXED_NOW)
-        ranges = [c["range"] for c in cells]
-        assert not any(r == f"transactions!{letter('id')}3" for r in ranges)
-        assert not any(r == f"transactions!{letter('created_at')}3" for r in ranges)
+    def test_does_not_include_id_or_created_at(self):
+        fields = transaction_update_to_fields({"merchant": "X"}, self.FIXED_NOW)
+        assert "id" not in fields and "created_at" not in fields
+
+    def test_every_field_is_a_real_column(self):
+        # The mirror rejects an unknown column, so a typo here is a failed save
+        # rather than a silently ignored cell as it was on the sheet.
+        fields = transaction_update_to_fields(
+            {"merchant": "X", "amount": 12, "nonsense": True}, self.FIXED_NOW)
+        assert set(fields) <= set(COLS)
 
 
 class TestHeadersIntegrity:

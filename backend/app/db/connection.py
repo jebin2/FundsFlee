@@ -42,6 +42,14 @@ def discard_mirror(sheet_id: str) -> None:
     _schema_ready.discard(str(base))
 
 
+def known_mirrors() -> list[str]:
+    """Every sheet id with a mirror on disk. The syncer's work list after a
+    restart, when no user has signed in yet but changes are still queued."""
+    if not DB_DIR.exists():
+        return []
+    return sorted(p.stem for p in DB_DIR.glob("*.db") if _SAFE_ID.match(p.stem))
+
+
 def mirror_exists(sheet_id: str) -> bool:
     """False means "not hydrated yet", never "the user deleted everything".
     The distinction is what stops an empty local store blanking the sheet."""

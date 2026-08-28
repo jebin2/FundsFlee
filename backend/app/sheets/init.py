@@ -118,8 +118,13 @@ def _reset_sheet_sync(access_token: str, sheet_id: str) -> None:
     # Discard it so the next access rebuilds from what the sheet now contains —
     # otherwise reads would keep serving deleted data, and worse, the syncer
     # would eventually push it back.
+    # Imported here: app.db.sync reaches back into app.sheets for its client
+    # and schema checks, so importing it at module scope closes a cycle.
+    from app.db import sync
+
     discard_mirror(sheet_id)
     mirror.forget(sheet_id)
+    sync.forget_sheet(sheet_id)
 
     sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
     seed_default_categories_sync(sheets, sheet_id)

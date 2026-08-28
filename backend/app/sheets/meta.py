@@ -3,13 +3,11 @@
 Every write used to read meta!A2:A100 first to find the key's row, so saving
 four settings cost eight requests against a 60-reads-per-minute quota — and
 none of it went through the retry wrapper, so a 429 surfaced as a 500 instead
-of backing off. set_meta_values writes a whole batch on one read.
+of backing off. Both halves are local now; the syncer sends the changed rows.
 """
 import asyncio
 
 from app.db import mirror
-from app.sheets.client import get_sheets_client, with_sheets_retry
-
 
 
 def _get_meta_values_sync(access_token: str, sheet_id: str) -> dict[str, str]:
@@ -24,44 +22,22 @@ async def get_meta_values(access_token: str, sheet_id: str) -> dict[str, str]:
 def _set_meta_values_sync(access_token: str, sheet_id: str, values: dict[str, str]) -> None:
     if not values:
         return
-    sheets = get_sheets_client(access_token)
 
-    # Which keys already have a row, and where. Reading this locally is the
-    # whole point: it used to cost a Sheets read on every settings save.
+    # Which keys already have a row. An existing key is an update in place; a
+    # new one appends, so the mirror keeps the sheet's row order.
     rows = mirror.rows(access_token, sheet_id, "meta")
-    row_of = {r[0]: i + 2 for i, r in enumerate(rows) if r and r[0]}
+    existing = {r[0] for r in rows if r and r[0]}
 
-    updates = [
-        {"range": f"meta!B{row_of[k]}", "values": [[v]]}
-        for k, v in values.items() if k in row_of
-    ]
-    additions = [[k, v] for k, v in values.items() if k not in row_of]
-
-    if updates:
-        with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
-            spreadsheetId=sheet_id,
-            body={"valueInputOption": "RAW", "data": updates},
-        ).execute())
-
-    if additions:
-        with_sheets_retry(lambda: sheets.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range="meta!A2",
-            valueInputOption="RAW",
-            body={"values": additions},
-        ).execute())
-
-    # Phase 2 dual-write, split the same way: existing keys are updates,
-    # new ones are appends, so the mirror lands on the same rows.
     for k, v in values.items():
-        if k in row_of:
+        if k in existing:
             mirror.update(access_token, sheet_id, "meta", {"value": v}, key=k)
     mirror.append(access_token, sheet_id, "meta",
-                  [{"key": k, "value": v} for k, v in additions])
+                  [{"key": k, "value": v} for k, v in values.items()
+                   if k not in existing])
 
 
 async def set_meta_values(access_token: str, sheet_id: str, values: dict[str, str]) -> None:
-    """Write several keys on a single read. Prefer this over looping."""
+    """Write several keys at once. Prefer this over looping."""
     await asyncio.to_thread(_set_meta_values_sync, access_token, sheet_id, values)
 
 

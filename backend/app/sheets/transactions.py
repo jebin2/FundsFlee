@@ -1,32 +1,25 @@
-"""Transactions tab — port of src/lib/sheets/transactions.ts."""
-import asyncio
-import re
-from typing import TypedDict
+"""Transactions tab — port of src/lib/sheets/transactions.ts.
 
-from googleapiclient.errors import HttpError
+Writes land in the mirror and return; app/db/sync carries them to the sheet on
+an interval. Nothing here talks to the Sheets API any more, which is the point:
+an import of fifty orders is one local transaction instead of fifty appends and
+fifty row lookups against a 60-per-minute quota.
+"""
+import asyncio
+from typing import TypedDict
 
 from app.db import mirror
 from app.db.repo import ROW_FIELD
 from app.db.registry import EXPECTED_HEADERS
-from app.sheets.client import get_sheets_client, with_sheets_retry
-from app.sheets.migrations import (
-    ensure_date_column_format_sync,
-    ensure_transaction_schema_sync,
-)
 from app.sheets.transaction_schema import (
     is_deleted_row,
-    letter,
     row_to_transaction,
     transaction_to_row,
-    fields_to_cells,
     transaction_update_to_fields,
 )
 
 PAGE_SIZE = 200
 
-# In-memory row-index cache: sheetId → {txId: 1-based sheet row number}
-# Invalidated on append (new row not in cache) and on soft-delete (row IDs shift
-# logically). Existing row numbers for un-deleted rows remain valid across appends.
 def _row_number_of(access_token: str, sheet_id: str, tx_id: str) -> int | None:
     """Sheet row holding this id, via the key index.
 
@@ -44,74 +37,24 @@ class TransactionPage(TypedDict):
     hasMore: bool
 
 
-# Read ID and deleted columns in one batchGet.
-#   physical — total rows with an ID (including soft-deleted) — used for pagination math
-#   visible  — rows with an ID that are NOT deleted — shown as "X of Y" to the user
+# physical — rows with an ID, soft-deleted included — the pagination math
+# visible  — rows with an ID that are not deleted — the "X of Y" the user sees
 def _get_row_counts(rows: list[list]) -> tuple[int, int]:
     physical = sum(1 for r in rows if r and r[0])
     visible = sum(1 for r in rows if r and r[0] and not is_deleted_row(r))
     return physical, visible
 
 
-_ROW_SPAN_RE = re.compile(r"![A-Z]+(\d+):[A-Z]+(\d+)$")
-
-
-def _row_span(updated_range: str) -> tuple[int, int] | None:
-    m = _ROW_SPAN_RE.search(updated_range or "")
-    return (int(m.group(1)), int(m.group(2))) if m else None
-
-
-def _convert_date_cells(sheets, sheet_id: str, first_row: int, txs: list[dict]) -> None:
-    """Re-write just the date column so Sheets stores real dates.
-
-    The row itself is written RAW, because USER_ENTERED applies to every cell:
-    it would evaluate a merchant like "=Zomato" as a formula and reformat the
-    ISO timestamps in created_at/updated_at. Only column B is reinterpreted.
-    """
-    col = letter("date")
-    values = [[tx.get("date") or ""] for tx in txs]
-    sheets.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range=f"transactions!{col}{first_row}:{col}{first_row + len(txs) - 1}",
-        valueInputOption="USER_ENTERED",
-        body={"values": values},
-    ).execute()
-
-
 def _append_transactions_sync(access_token: str, sheet_id: str, txs: list[dict]) -> None:
     if not txs:
         return
-    sheets = get_sheets_client(access_token)
-    ensure_transaction_schema_sync(sheets, sheet_id)
-    ensure_date_column_format_sync(sheets, sheet_id)
-
-    res = with_sheets_retry(lambda: sheets.spreadsheets().values().append(
-        spreadsheetId=sheet_id,
-        range="transactions!A2",
-        valueInputOption="RAW",
-        body={"values": [transaction_to_row(tx) for tx in txs]},
-    ).execute())
-
-    span = _row_span(((res or {}).get("updates") or {}).get("updatedRange") or "")
-    if span:
-        try:
-            _convert_date_cells(sheets, sheet_id, span[0], txs)
-        except HttpError:
-            pass  # rows are already written; dates just stay text
-
-    # Phase 2 dual-write. The sheet is still authoritative; this only keeps the
-    # mirror in step so reads can move over with evidence.
     mirror.append(access_token, sheet_id, "transactions",
                   [dict(zip(EXPECTED_HEADERS, transaction_to_row(tx))) for tx in txs])
 
 
 async def append_transactions(access_token: str, sheet_id: str, txs: list[dict]) -> None:
-    """Write many rows in ONE request.
-
-    Sheets bills per request, not per row, against a per-minute write quota —
-    appending a fifty-order import row by row burned fifty of them and risked a
-    65-second backoff mid-run.
-    """
+    """Write many rows at once. Local, so this no longer costs a request at all
+    — the syncer batches them into one when it next runs."""
     await asyncio.to_thread(_append_transactions_sync, access_token, sheet_id, txs)
 
 
@@ -170,33 +113,11 @@ async def get_transaction_by_id(access_token: str, sheet_id: str, tx_id: str) ->
 def _update_transaction_field_sync(
     access_token: str, sheet_id: str, tx_id: str, updates: dict
 ) -> None:
-    sheets = get_sheets_client(access_token)
     row_number = _row_number_of(access_token, sheet_id, tx_id)
     if not row_number:
         return
-
-    # One normalisation, two destinations — the sheet cells and the mirror row
-    # are built from the same values, including the updated_at timestamp.
-    fields = transaction_update_to_fields(updates)
-    batch_data = fields_to_cells(fields, row_number)
-    if batch_data:
-        # Same split as the append path: everything RAW, the date cell alone
-        # USER_ENTERED so an edit does not turn it back into text.
-        date_prefix = f"transactions!{letter('date')}"
-        date_cells = [c for c in batch_data if c["range"].startswith(date_prefix)]
-        other_cells = [c for c in batch_data if not c["range"].startswith(date_prefix)]
-
-        if other_cells:
-            with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
-                spreadsheetId=sheet_id,
-                body={"valueInputOption": "RAW", "data": other_cells},
-            ).execute())
-        if date_cells:
-            with_sheets_retry(lambda: sheets.spreadsheets().values().batchUpdate(
-                spreadsheetId=sheet_id,
-                body={"valueInputOption": "USER_ENTERED", "data": date_cells},
-            ).execute())
-        mirror.update_row(access_token, sheet_id, "transactions", row_number, fields)
+    mirror.update_row(access_token, sheet_id, "transactions", row_number,
+                      transaction_update_to_fields(updates))
 
 
 async def update_transaction_field(

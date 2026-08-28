@@ -3,7 +3,6 @@ import asyncio
 
 from app.db import mirror
 from app.db.repo import ROW_FIELD
-from app.sheets.client import get_sheets_client, with_sheets_retry
 
 
 def _row_to_category(r: list) -> dict:
@@ -32,14 +31,6 @@ async def get_categories(access_token: str, sheet_id: str) -> list[dict]:
 
 
 def _append_category_sync(access_token: str, sheet_id: str, cat: dict) -> None:
-    sheets = get_sheets_client(access_token)
-    with_sheets_retry(lambda: sheets.spreadsheets().values().append(
-        spreadsheetId=sheet_id,
-        range="categories!A2",
-        valueInputOption="RAW",
-        body={"values": [[cat["id"], cat["name"], "", cat["color"], cat["icon"], "false", cat["created_at"]]]},
-    ).execute())
-
     mirror.append(access_token, sheet_id, "categories", [{
         "id": cat["id"], "name": cat["name"], "parent_id": "",
         "color": cat["color"], "icon": cat["icon"], "is_default": "false",
@@ -52,21 +43,12 @@ async def append_category(access_token: str, sheet_id: str, cat: dict) -> None:
 
 
 def _delete_category_by_id_sync(access_token: str, sheet_id: str, cat_id: str) -> None:
-    sheets = get_sheets_client(access_token)
     found = mirror.find(access_token, sheet_id, "categories", id=cat_id)
     if not found:
         return
-    row_index = found[ROW_FIELD] - 2
-    # Clear the name to soft-delete (row stays but is filtered out on read)
-    with_sheets_retry(lambda: sheets.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range=f"categories!A{row_index + 2}:G{row_index + 2}",
-        valueInputOption="RAW",
-        body={"values": [["", "", "", "", "", "", ""]]},
-    ).execute())
-
-    # Blanked, not removed — the row keeps its position, in both stores.
-    mirror.blank_row(access_token, sheet_id, "categories", row_index + 2)
+    # Blanked, not removed: the row keeps its position, so no row below it
+    # shifts onto the wrong sheet line. Reads filter out nameless rows.
+    mirror.blank_row(access_token, sheet_id, "categories", found[ROW_FIELD])
 
 
 async def delete_category_by_id(access_token: str, sheet_id: str, cat_id: str) -> None:

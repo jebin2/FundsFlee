@@ -17,8 +17,10 @@ def db(tmp_path, monkeypatch):
 
 
 def dirty(db, tab):
+    """The rows the syncer would push for this tab — what a claim sees."""
     return [r[0] for r in db.execute(
-        "SELECT row_num FROM _dirty WHERE tab = ? ORDER BY row_num", (tab,))]
+        "SELECT DISTINCT row_num FROM _outbox WHERE tab = ? ORDER BY row_num",
+        (tab,))]
 
 
 class TestOpening:
@@ -133,28 +135,28 @@ class TestDirtyTrackingIsAutomatic:
 
     def test_an_insert_marks_itself(self, db):
         Repo(db, spec("meta")).insert({"key": "a"})
-        assert dirty(db, "meta") == [1]      # rowid, sheet row 2
+        assert dirty(db, "meta") == [2]      # sheet row 2, under the header
 
     def test_an_update_marks_itself(self, db):
         repo = Repo(db, spec("meta"))
         repo.insert({"key": "a"})
-        db.execute("DELETE FROM _dirty")
+        db.execute("DELETE FROM _outbox")
         repo.update({"value": "v"}, key="a")
-        assert dirty(db, "meta") == [1]
+        assert dirty(db, "meta") == [2]
 
     def test_marks_are_per_tab(self, db):
         Repo(db, spec("meta")).insert({"key": "a"})
         Repo(db, spec("categories")).insert({"id": "c1", "name": "Food"})
-        assert dirty(db, "meta") == [1]
-        assert dirty(db, "categories") == [1]
+        assert dirty(db, "meta") == [2]
+        assert dirty(db, "categories") == [2]
 
-    def test_repeated_edits_collapse_to_one_mark(self, db):
+    def test_repeated_edits_push_the_row_once(self, db):
         repo = Repo(db, spec("meta"))
         repo.insert({"key": "a"})
         repo.update({"value": "1"}, key="a")
         repo.update({"value": "2"}, key="a")
-        assert dirty(db, "meta") == [1]
+        assert dirty(db, "meta") == [2]
 
     def test_a_bulk_insert_marks_every_row(self, db):
         Repo(db, spec("meta")).insert_many([{"key": f"k{i}"} for i in range(5)])
-        assert dirty(db, "meta") == [1, 2, 3, 4, 5]
+        assert dirty(db, "meta") == [2, 3, 4, 5, 6]

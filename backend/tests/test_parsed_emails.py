@@ -12,48 +12,13 @@ import app.db.mirror as mirror
 import app.sheets.parsed_emails as mod
 
 
-class FakeRequest:
-    def __init__(self, fn):
-        self._fn = fn
-
-    def execute(self):
-        return self._fn()
-
-
-class FakeSheets:
-    def __init__(self, rows=None):
-        self.rows = rows or []
-        self.appended: list[list] = []
-        self.updated: list[tuple[str, list]] = []
-        self.reads = 0
-
-    def spreadsheets(self):
-        return self
-
-    def values(self):
-        return self
-
-    def get(self, spreadsheetId=None, range=None, **kw):
-        self.reads += 1
-        return FakeRequest(lambda: {"values": self.rows})
-
-    def append(self, spreadsheetId=None, range=None, body=None, **kw):
-        self.appended.append(body["values"][0])
-        row = len(self.rows) + 2
-        self.rows.append(body["values"][0])
-        return FakeRequest(lambda: {
-            "updates": {"updatedRange": f"parsed_emails!A{row}:G{row}"}})
-
-    def update(self, spreadsheetId=None, range=None, body=None, **kw):
-        self.updated.append((range, body["values"][0]))
-        return FakeRequest(lambda: {})
-
-
 @pytest.fixture
 def fake(monkeypatch):
-    fake = FakeSheets()
-    monkeypatch.setattr(mod, "get_sheets_client", lambda token: fake)
-    return fake
+    """Recording an email must not reach Google. It used to be a read to find
+    the row plus a write; both are local now."""
+    def boom(*a, **kw):
+        raise AssertionError("record_parsed_email called the Sheets API")
+    monkeypatch.setattr(mod, "get_sheets_client", boom, raising=False)
 
 
 def _row(email_id, status, subject="Order", attempts=1):
@@ -136,8 +101,8 @@ class TestAnEmptyReadIsNeverGuessed:
 class TestOneRowPerMessage:
     def test_a_new_message_appends(self, fake):
         asyncio.run(mod.record_parsed_email("tok", "sheet", _record("new", "parsed")))
-        assert len(fake.appended) == 1
-        assert fake.updated == []
+        rows = mirror.rows("tok", "sheet", "parsed_emails")
+        assert [r[mod.COLS["email_id"]] for r in rows] == ["new"]
 
     def test_a_retry_updates_in_place(self, fake, seed):
         # Without this the retried email leaves a second row and the scanned
@@ -145,30 +110,9 @@ class TestOneRowPerMessage:
         seed("sheet", "parsed_emails", [_row("a", "parsed"), _row("b", "failed")])
         asyncio.run(mod.record_parsed_email("tok", "sheet", _record("b", "parsed")))
 
-        assert fake.appended == []
-        range_, row = fake.updated[0]
-        assert range_ == "parsed_emails!A3:G3"   # second data row
-        assert row[mod.COLS["status"]] == "parsed"
-
-    def test_the_first_row_is_addressed_correctly(self, fake, seed):
-        seed("sheet", "parsed_emails", [_row("a", "failed")])
-        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "parsed")))
-        assert fake.updated[0][0] == "parsed_emails!A2:G2"
-
-
-class TestLookupsCostNoApiCall:
-    """record_parsed_email re-read the whole tab to find the row to update —
-    one read per message, of a tab that grows with every message, against a
-    60-reads-per-minute quota. The row is found locally now, so the cache that
-    softened that is gone along with the reads it was caching."""
-
-    def test_recording_reads_nothing_from_the_sheet(self, fake, seed):
-        seed("sheet", "parsed_emails", [_row("a", "failed")])
-        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "parsed")))
-        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("b", "parsed")))
-
-        assert fake.reads == 0
-        assert fake.updated[0][0] == "parsed_emails!A2:G2"
+        rows = mirror.rows("tok", "sheet", "parsed_emails")
+        assert len(rows) == 2
+        assert rows[1][mod.COLS["status"]] == "parsed"
 
     def test_an_append_is_addressable_afterwards(self, fake):
         # The appended row has to be findable, or the next write for that
@@ -176,5 +120,11 @@ class TestLookupsCostNoApiCall:
         asyncio.run(mod.record_parsed_email("tok", "sheet", _record("new", "failed")))
         asyncio.run(mod.record_parsed_email("tok", "sheet", _record("new", "parsed")))
 
-        assert len(fake.appended) == 1
-        assert fake.updated[0][0] == "parsed_emails!A2:G2"
+        rows = mirror.rows("tok", "sheet", "parsed_emails")
+        assert len(rows) == 1
+        assert rows[0][mod.COLS["status"]] == "parsed"
+
+    def test_the_attempt_count_is_carried_through(self, fake, seed):
+        seed("sheet", "parsed_emails", [_row("a", "failed", attempts=1)])
+        asyncio.run(mod.record_parsed_email("tok", "sheet", _record("a", "failed", attempts=2)))
+        assert asyncio.run(mod.get_email_states("tok", "sheet"))["a"]["attempts"] == 2

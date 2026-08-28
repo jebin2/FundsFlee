@@ -1,7 +1,7 @@
 """The local mirror: every read, and the local half of every write.
 
-Phase 3. Reads are served from here; writes still go to the sheet as well, so
-the two stores stay identical and the syncer can take over in 3b.
+Every read and every write is served from here. The sheet is caught up by
+app/db/sync on an interval, from the queue the write triggers fill.
 
 `rows()` returns positional lists in sheet order — the exact shape
 values().get returns. That is deliberate: every sheets module already parses
@@ -14,15 +14,16 @@ come from here, a missed write means the user is shown data that is missing
 their last change. Failing loudly is the honest outcome, and the row is still
 safe in the sheet.
 
-**Write functions must be called AFTER the sheet write has succeeded.** That
-ordering is what makes the bootstrap correct: if the mirror does not exist yet,
-hydration reads a sheet that already contains this write, so the write must not
-then be applied a second time.
+**This is where a write lands, not a copy of one.** Phase 2 called these after
+the sheet write and skipped the first one, because hydration would read a sheet
+that already contained it. The order is reversed now — nothing is in the sheet
+until app/db/sync sends it — so every write applies, including the one that
+triggered hydration. Hydration copies what the sheet has; the write goes on top.
 """
 import threading
 
 from app.core.logger import log
-from app.db.connection import connect, mirror_exists
+from app.db.connection import connect
 from app.db.registry import spec
 from app.db.repo import Repo
 
@@ -32,12 +33,12 @@ _ready: set[str] = set()
 _ready_guard = threading.Lock()
 
 
-def _ensure(access_token: str, sheet_id: str) -> bool:
-    """Make sure a mirror exists. Returns True if it was built during THIS call.
+def _ensure(access_token: str, sheet_id: str) -> None:
+    """Make sure a mirror exists, hydrating it from the sheet if it does not.
 
     The lock is held across hydration rather than around the memo alone: two
-    threads that both saw a missing mirror would otherwise both be told they
-    hydrated it, and the second would skip its write.
+    threads that both saw a missing mirror would otherwise both hydrate it, and
+    every row would be doubled.
     """
     # Imported here, not at module scope: hydrate reaches into app.sheets for a
     # Google client, and app.sheets writes call back into this module.
@@ -45,11 +46,9 @@ def _ensure(access_token: str, sheet_id: str) -> bool:
 
     with _ready_guard:
         if sheet_id in _ready:
-            return False
-        built_now = not mirror_exists(sheet_id)
+            return
         hydrate_sync(access_token, sheet_id)
         _ready.add(sheet_id)
-        return built_now
 
 
 def forget(sheet_id: str) -> None:
@@ -59,11 +58,7 @@ def forget(sheet_id: str) -> None:
 
 
 def _apply(access_token: str, sheet_id: str, tab: str, work) -> None:
-    if _ensure(access_token, sheet_id):
-        # The mirror was just built from the sheet, and the sheet already
-        # contains this write — it came first. Applying it again appends a
-        # duplicate row.
-        return
+    _ensure(access_token, sheet_id)
     conn = connect(sheet_id)
     try:
         work(Repo(conn, spec(tab)))
