@@ -1,4 +1,4 @@
-const OPENCODE_API_URL = (process.env.OPENCODE_API_URL ?? "https://opencode.voidall.com").replace(/\/$/, "");
+const OPENCODE_API_URL = (process.env.OPENCODE_API_URL ?? "https://ttt.voidall.com").replace(/\/$/, "");
 
 // Sent as X-API-Key on every call to either TTT backend (OpenCode and OCR
 // share one key); they reject requests without it.

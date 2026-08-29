@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     ai_model: str | None = None
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
-    opencode_api_url: str = "https://opencode.voidall.com"
+    opencode_api_url: str = "https://ttt.voidall.com"
     ocr_api_url: str = "https://jebin2-ocr.hf.space"
     # Sent as X-API-Key on every call to either TTT backend (OpenCode and OCR
     # share one key); they reject requests without it.

@@ -9,7 +9,7 @@ from app.config import settings
 
 
 def _base_url() -> str:
-    return (settings.opencode_api_url or "https://opencode.voidall.com").rstrip("/")
+    return (settings.opencode_api_url or "https://ttt.voidall.com").rstrip("/")
 
 
 def auth_headers() -> dict[str, str]:
