@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Transaction } from "@/types";
-import { BottomSheet, BottomSheetHeader } from "@/components/ui/BottomSheet";
+import { BottomSheet, BottomSheetHeader, NESTED_LAYER } from "@/components/ui/BottomSheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatINR } from "@/lib/format/currency";
 import { emailApi, type RerunPreview } from "@/lib/api/email";
@@ -63,7 +63,7 @@ export function RerunEmailSheet({ tx, onClose, onDone }: RerunEmailSheetProps) {
   const editedCount = affected.filter((t) => t.edited).length;
 
   return (
-    <BottomSheet onClose={onClose} maxHeight="70vh">
+    <BottomSheet onClose={onClose} maxHeight="70vh" layer={NESTED_LAYER}>
       <BottomSheetHeader
         title="Re-read this email?"
         subtitle={preview?.subject}

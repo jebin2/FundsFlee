@@ -1,16 +1,30 @@
 import type { ReactNode } from "react";
 
+// The layering the app already uses:
+//   50      bottom nav
+//   60/70   TransactionSheet — backdrop / sheet
+//   80/90   anything opened FROM that sheet (AddInfoSheet, ReceiptItemsPopup)
+// A sheet opened from inside another one must pass NESTED_LAYER, or it renders
+// behind the sheet that opened it.
+export const NESTED_LAYER = 80;
+
 interface BottomSheetProps {
   onClose: () => void;
   maxHeight?: string;
+  /** Stacking level. Default clears the bottom nav; use NESTED_LAYER when this
+   *  sheet is opened from within another sheet. */
+  layer?: number;
   children: ReactNode;
 }
 
-export function BottomSheet({ onClose, maxHeight = "80vh", children }: BottomSheetProps) {
+export function BottomSheet({ onClose, maxHeight = "80vh", layer = 60, children }: BottomSheetProps) {
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
+      // Inline rather than z-[…]: Tailwind cannot compile a class built at
+      // runtime, so a dynamic arbitrary value would silently produce no z-index
+      // at all.
+      className="fixed inset-0 flex items-end justify-center"
+      style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: layer }}
       onClick={onClose}
     >
       <div
