@@ -40,15 +40,30 @@ def _to_receipt_mime_type(mime_type: str) -> str:
 async def process_receipt(session: SheetSession, request: dict) -> dict:
     tx_id = request["txId"]
     log.info("receipt", "started", {"txId": tx_id})
+
+    # Read before claiming the row. Marking a row "processing" and only then
+    # discovering it does not exist writes nothing and loses the row's real
+    # status, which is exactly the state this needs to report.
+    placeholder = await get_transaction_by_id(session.access_token, session.sheet_id, tx_id)
+
+    # Two different failures, kept apart on purpose: "no such row" means the id
+    # never reached the store (or was deleted), while "row without a url" means
+    # something dispatched a non-receipt transaction here. One log line for both
+    # cannot tell them apart, so each says which, and the second carries the
+    # source and status that explain how it came to be routed here at all.
+    if not placeholder:
+        log.error("receipt", "placeholder not found", None, {"txId": tx_id})
+        return {"error": "Placeholder not found", "status": 404}
+    if not placeholder.get("receipt_url"):
+        log.error("receipt", "placeholder has no receipt_url", None,
+                  {"txId": tx_id, "source": placeholder.get("source"),
+                   "status": placeholder.get("status")})
+        await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
+        return {"error": "Receipt URL not found", "status": 404}
+
     await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "processing"})
 
     try:
-        placeholder = await get_transaction_by_id(session.access_token, session.sheet_id, tx_id)
-        if not placeholder or not placeholder.get("receipt_url"):
-            log.error("receipt", "no receipt_url on placeholder", None, {"txId": tx_id})
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
-            return {"error": "Placeholder or receipt URL not found", "status": 404}
-
         file_id = _receipt_drive_file_id(placeholder["receipt_url"])
         if not file_id:
             log.error("receipt", "could not extract Drive file ID from URL", None,
