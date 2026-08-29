@@ -9,7 +9,15 @@ from app.core.dates import now_iso
 from app.core.deps import SheetSession, require_session
 from app.core.numbers import js_parse_int
 from app.jobs.enrich_transaction_job import prepare_receipt_retry, run_enrich_transaction_job
-from app.sheets import PAGE_SIZE, append_transaction, get_all_transactions, get_transactions, update_transaction_field
+from app.services.item_normalization_service import request_note_refresh
+from app.sheets import (
+    PAGE_SIZE,
+    append_transaction,
+    get_all_transactions,
+    get_transaction_by_id,
+    get_transactions,
+    update_transaction_field,
+)
 
 router = APIRouter()
 
@@ -39,17 +47,35 @@ async def create_transaction(request: Request, session: SheetSession = Depends(r
     return {"transaction": tx}
 
 
+async def _apply_updates(session: SheetSession, tx_id: str, updates: dict) -> None:
+    """Write the update, and re-read the notes if that is what changed.
+
+    A suggestion made from the old notes describes text that no longer exists,
+    so it is retired and a fresh one is asked for. Compared rather than assumed:
+    an edit that merely re-saves the same notes should not cost an AI call.
+    """
+    changed = False
+    if "notes" in updates:
+        before = await get_transaction_by_id(session.access_token, session.sheet_id, tx_id)
+        changed = (before or {}).get("notes", "") != (updates.get("notes") or "")
+
+    await update_transaction_field(session.access_token, session.sheet_id, tx_id, updates)
+
+    if changed:
+        request_note_refresh(session, tx_id)
+
+
 @router.put("/api/transactions/{tx_id}")
 async def put_transaction(tx_id: str, request: Request, session: SheetSession = Depends(require_session)) -> dict:
     body = await request.json()
-    await update_transaction_field(session.access_token, session.sheet_id, tx_id, body["updates"])
+    await _apply_updates(session, tx_id, body["updates"])
     return {"ok": True}
 
 
 @router.patch("/api/transactions/{tx_id}")
 async def patch_transaction(tx_id: str, request: Request, session: SheetSession = Depends(require_session)) -> dict:
     updates = await request.json()
-    await update_transaction_field(session.access_token, session.sheet_id, tx_id, updates)
+    await _apply_updates(session, tx_id, updates)
     return {"ok": True, "updates": updates}
 
 

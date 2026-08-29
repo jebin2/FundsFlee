@@ -32,11 +32,14 @@ function InFlightView({ status }: { status: string }) {
 }
 
 interface TransactionSheetProps {
+  /** Called when a save actually changed the notes — the AI suggestions read
+   *  from those notes are stale from that moment. */
+  onNotesEdited?: () => void;
   tx: Transaction;
   onClose: () => void;
 }
 
-export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetProps) {
+export function TransactionSheet({ tx: initialTx, onClose, onNotesEdited }: TransactionSheetProps) {
   const editFormRef = useRef<EditFormHandle | null>(null);
   const {
     tx, view, setView,
@@ -194,7 +197,15 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                   )}
                 </div>
               )}
-              <EditForm ref={editFormRef} tx={tx} onSaved={onTxUpdated} />
+              <EditForm
+                ref={editFormRef}
+                tx={tx}
+                onSaved={(updated) => {
+                  const notesChanged = (updated.notes ?? "") !== (tx.notes ?? "");
+                  onTxUpdated(updated);
+                  if (notesChanged) onNotesEdited?.();
+                }}
+              />
             </>
           )}
 

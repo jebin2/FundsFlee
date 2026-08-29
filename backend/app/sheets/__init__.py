@@ -24,9 +24,11 @@ from app.sheets.parsed_emails import (
     record_parsed_email,
 )
 from app.sheets.suggestions import (
+    SUPERSEDED,
     append_item_suggestions,
     get_item_suggestions,
     resolve_item_suggestion,
+    supersede_note_suggestions,
 )
 from app.sheets.transactions import (
     PAGE_SIZE,
@@ -65,6 +67,8 @@ __all__ = [
     "record_parsed_email",
     "reset_sheet",
     "resolve_item_suggestion",
+    "supersede_note_suggestions",
+    "SUPERSEDED",
     "save_analysis_cache",
     "set_meta_value",
     "set_meta_values",

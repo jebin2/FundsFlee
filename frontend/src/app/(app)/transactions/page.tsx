@@ -51,7 +51,8 @@ function TransactionsContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { suggestions, activeSuggTxId, setActiveSuggTxId, loadSuggestions, handleSuggestion } =
+  const { suggestions, activeSuggTxId, setActiveSuggTxId, loadSuggestions,
+          refreshAfterNotesEdit, handleSuggestion } =
     useTransactionSuggestions(loadData);
   const { triggerProcessing, region } = useReceiptProcessingPoller(transactions, isOnline, loadData);
   const { dupChecking, dupError, activeDupGroup, setActiveDupGroup, triggerDupDetect, resolveDuplicate, dismissGroup } =
@@ -195,7 +196,11 @@ function TransactionsContent() {
       )}
 
       {selectedTx && (
-        <TransactionSheet tx={selectedTx} onClose={() => setSelectedTx(null)} />
+        <TransactionSheet
+          tx={selectedTx}
+          onClose={() => setSelectedTx(null)}
+          onNotesEdited={refreshAfterNotesEdit}
+        />
       )}
 
       {rerunTx && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { PendingSuggestion, Transaction } from "@/types";
 import { itemsApi } from "@/lib/api/items";
 
@@ -34,6 +34,25 @@ export function useTransactionSuggestions(loadData: () => Promise<Transaction[]>
     setSuggestions(map);
   }, []);
 
+  // Editing notes retires whatever was suggested from the old ones, so the
+  // badge has to go now — it describes text that no longer exists. The
+  // replacement comes from a background AI call, so one follow-up pass picks
+  // it up a moment later rather than polling for it.
+  const followUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshAfterNotesEdit = useCallback(async () => {
+    const txs = await loadData();
+    await loadSuggestions(txs);
+    if (followUp.current) clearTimeout(followUp.current);
+    followUp.current = setTimeout(() => {
+      loadData().then(loadSuggestions);
+    }, 6000);
+  }, [loadData, loadSuggestions]);
+
+  useEffect(() => () => {
+    if (followUp.current) clearTimeout(followUp.current);
+  }, []);
+
   async function handleSuggestion(s: PendingSuggestion, action: "accept" | "reject") {
     setSuggestions((prev) => {
       const next = { ...prev };
@@ -49,5 +68,6 @@ export function useTransactionSuggestions(loadData: () => Promise<Transaction[]>
     if (action === "accept") loadData();
   }
 
-  return { suggestions, activeSuggTxId, setActiveSuggTxId, loadSuggestions, handleSuggestion };
+  return { suggestions, activeSuggTxId, setActiveSuggTxId, loadSuggestions,
+           refreshAfterNotesEdit, handleSuggestion };
 }
