@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.core.deps import SheetSession
 from app.core.logger import log
 from app.sheets import get_analysis_cache, get_analysis_from_drive, upsert_analysis_cache_row
+from app.ai import analysis_shape as shape
 
 CACHE_FRESH_MS = 24 * 60 * 60 * 1000
 
@@ -37,7 +38,10 @@ async def _read_cached_analysis(session: SheetSession, period: str) -> dict:
     try:
         return {
             "status": "done",
-            "analysis": json.loads(summary_json),
+            # Normalised on the way out too: rows cached before the shape
+            # was enforced still hold objects where sentences belong, and
+            # would keep crashing the tab until they were regenerated.
+            "analysis": shape.normalise(json.loads(summary_json)),
             "generated_at": cached["generated_at"],
         }
     except Exception:

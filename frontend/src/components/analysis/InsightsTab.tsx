@@ -8,6 +8,7 @@ import { Spinner, GeneratingSpinner, FailedState } from "./AnalysisStates";
 import type { AsyncStatus } from "./AnalysisStates";
 import { formatINR } from "@/lib/format/currency";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { normaliseAnalysis } from "@/domain/analysis/shape";
 
 export function InsightsTab({ period }: { period: string }) {
   const { profile } = useProfile();
@@ -21,7 +22,7 @@ export function InsightsTab({ period }: { period: string }) {
       const res = await fetch(`/api/analyze?period=${period}`);
       const data = await res.json();
       if (data.status === "done") {
-        setAnalysis(data.analysis);
+        setAnalysis(normaliseAnalysis(data.analysis));
         setGeneratedAt(data.generated_at ?? "");
       }
       setStatus(data.status);
@@ -57,7 +58,7 @@ export function InsightsTab({ period }: { period: string }) {
     });
     const data = await res.json();
     if (data.status === "done") {
-      setAnalysis(data.analysis);
+      setAnalysis(normaliseAnalysis(data.analysis));
       setGeneratedAt(data.generated_at ?? "");
       setStatus("done");
     } else {

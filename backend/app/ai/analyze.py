@@ -3,6 +3,7 @@ import math
 
 from app.ai.client import generate_text
 from app.ai.parse_json import try_parse_ai_json
+from app.ai import analysis_shape as shape
 from app.core.numbers import to_locale_inr
 
 
@@ -60,7 +61,8 @@ Top merchants:
 
 Provide analysis as JSON:
 {{
-  "ai_insights": [3-5 specific observations about their spending patterns],
+  "ai_insights": [3-5 plain strings, each one specific observation about their
+                  spending patterns. Strings, NOT objects.],
   "optimization_tips": [
     {{
       "title": string,
@@ -84,6 +86,8 @@ Be specific to the region (suggest local alternatives, local prices). For Indian
         "period_type": "month",
         "total_spent": total_spent,
         "by_category": category_summary,
-        "ai_insights": ai_data.get("ai_insights") or [],
-        "optimization_tips": ai_data.get("optimization_tips") or [],
+        # The model is asked for strings and sometimes returns objects. The
+        # shape is enforced, not trusted — the UI renders these directly.
+        "ai_insights": shape.insights(ai_data.get("ai_insights")),
+        "optimization_tips": shape.tips(ai_data.get("optimization_tips")),
     }
