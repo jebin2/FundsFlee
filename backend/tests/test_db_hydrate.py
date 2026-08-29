@@ -11,6 +11,9 @@ import app.db.connection as conn_mod
 import app.db.hydrate as mod
 from app.db import Repo, connect, mirror_exists, spec
 
+# Derived so adding a column does not silently stop these fakes matching.
+TX_RANGE = spec("transactions").data_range
+
 
 class FakeRequest:
     def __init__(self, fn):
@@ -65,7 +68,7 @@ def _tx(tx_id, date="2026-07-30", merchant="Zomato", amount="450"):
 
 class TestFillingAnEmptyMirror:
     def test_rows_land_in_sheet_order(self, sheets_dir, monkeypatch):
-        fake = FakeSheets({"transactions!A2:AA": [_tx("a"), _tx("b"), _tx("c")]})
+        fake = FakeSheets({TX_RANGE: [_tx("a"), _tx("b"), _tx("c")]})
         _wire(monkeypatch, fake)
 
         counts = mod.hydrate_sync("tok", "sheet_abc")
@@ -75,7 +78,7 @@ class TestFillingAnEmptyMirror:
         assert [r["id"] for r in rows] == ["a", "b", "c"]
 
     def test_row_positions_match_the_sheet(self, sheets_dir, monkeypatch):
-        _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a"), _tx("b")]}))
+        _wire(monkeypatch, FakeSheets({TX_RANGE: [_tx("a"), _tx("b")]}))
         mod.hydrate_sync("tok", "sheet_abc")
 
         rows = Repo(connect("sheet_abc"), spec("transactions")).all()
@@ -85,7 +88,7 @@ class TestFillingAnEmptyMirror:
         # Sheets returns [] for a blank row. Skipping it would shift every row
         # below onto the wrong sheet line.
         _wire(monkeypatch, FakeSheets(
-            {"transactions!A2:AA": [_tx("a"), [], _tx("c")]}))
+            {TX_RANGE: [_tx("a"), [], _tx("c")]}))
         mod.hydrate_sync("tok", "sheet_abc")
 
         rows = Repo(connect("sheet_abc"), spec("transactions")).all()
@@ -104,7 +107,7 @@ class TestFillingAnEmptyMirror:
         mod.hydrate_sync("tok", "sheet_abc")
 
         assert set(fake.ranges_read) == {
-            "transactions!A2:AA", "categories!A2:G", "analysis_cache!A2:G",
+            TX_RANGE, "categories!A2:G", "analysis_cache!A2:G",
             "item_suggestions!A2:G", "meta!A2:B", "parsed_emails!A2:G"}
 
     def test_a_reserved_word_column_survives(self, sheets_dir, monkeypatch):
@@ -132,14 +135,14 @@ class TestHydratedRowsAreNotPendingChanges:
     def test_nothing_is_left_dirty(self, sheets_dir, monkeypatch):
         # The inserts fire the dirty triggers. Leaving those marks would make
         # the first sync rewrite the sheet with what it already contains.
-        _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a"), _tx("b")]}))
+        _wire(monkeypatch, FakeSheets({TX_RANGE: [_tx("a"), _tx("b")]}))
         mod.hydrate_sync("tok", "sheet_abc")
 
         conn = connect("sheet_abc")
         assert conn.execute("SELECT COUNT(*) FROM _outbox").fetchone()[0] == 0
 
     def test_hydration_is_recorded(self, sheets_dir, monkeypatch):
-        _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a")]}))
+        _wire(monkeypatch, FakeSheets({TX_RANGE: [_tx("a")]}))
         mod.hydrate_sync("tok", "sheet_abc")
 
         conn = connect("sheet_abc")
@@ -160,7 +163,7 @@ class TestHydratedRowsAreNotPendingChanges:
 
 class TestItRunsOnce:
     def test_a_second_call_does_not_reread_the_sheet(self, sheets_dir, monkeypatch):
-        fake = FakeSheets({"transactions!A2:AA": [_tx("a")]})
+        fake = FakeSheets({TX_RANGE: [_tx("a")]})
         _wire(monkeypatch, fake)
         mod.hydrate_sync("tok", "sheet_abc")
         reads = len(fake.ranges_read)
@@ -171,7 +174,7 @@ class TestItRunsOnce:
         assert counts["transactions"] == 1         # still reports the truth
 
     def test_it_does_not_duplicate_rows(self, sheets_dir, monkeypatch):
-        _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a"), _tx("b")]}))
+        _wire(monkeypatch, FakeSheets({TX_RANGE: [_tx("a"), _tx("b")]}))
         mod.hydrate_sync("tok", "sheet_abc")
         mod.hydrate_sync("tok", "sheet_abc")
 
@@ -214,7 +217,7 @@ class TestAFailedHydrationLeavesNothing:
         with pytest.raises(HttpError):
             mod.hydrate_sync("tok", "sheet_abc")
 
-        _wire(monkeypatch, FakeSheets({"transactions!A2:AA": [_tx("a")]}))
+        _wire(monkeypatch, FakeSheets({TX_RANGE: [_tx("a")]}))
         assert mod.hydrate_sync("tok", "sheet_abc")["transactions"] == 1
 
 
@@ -224,7 +227,7 @@ class TestVerificationCatchesCorruption:
 
     def test_a_dropped_row_is_caught(self, sheets_dir, monkeypatch):
         _wire(monkeypatch, FakeSheets(
-            {"transactions!A2:AA": [_tx("a"), _tx("b"), _tx("c")]}))
+            {TX_RANGE: [_tx("a"), _tx("b"), _tx("c")]}))
 
         real = mod.Repo.insert_rows
         monkeypatch.setattr(mod.Repo, "insert_rows",
@@ -238,7 +241,7 @@ class TestVerificationCatchesCorruption:
         # Same count, wrong order — every row below would sit on the wrong
         # sheet line, which a count check alone would miss.
         _wire(monkeypatch, FakeSheets(
-            {"transactions!A2:AA": [_tx("a"), _tx("b"), _tx("c")]}))
+            {TX_RANGE: [_tx("a"), _tx("b"), _tx("c")]}))
 
         real = mod.Repo.insert_rows
         monkeypatch.setattr(mod.Repo, "insert_rows",

@@ -28,3 +28,18 @@ export async function processTransaction(tx: Transaction, region: string): Promi
   }
   return true;
 }
+
+// What to call a source in front of the user.
+const SOURCE_LABELS: Record<TransactionSource, string> = {
+  manual: "Manual entry",
+  sms: "SMS",
+  email: "Email",
+  receipt: "Receipt",
+  shortcut: "Shortcut",
+  merge: "Merge",
+  import: "Statement",
+};
+
+export function sourceLabel(source: TransactionSource): string {
+  return SOURCE_LABELS[source] ?? "Transaction";
+}

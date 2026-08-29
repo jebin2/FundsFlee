@@ -58,7 +58,9 @@ class TestColumnLetters:
         assert (_col_letter(1), _col_letter(26), _col_letter(27)) == ("A", "Z", "AA")
 
     def test_transactions_range_covers_every_column(self):
-        assert _col_letter(len(COLS)) == LAST_COL == "AA"
+        # Both sides derived from COLS on purpose — a literal here would still
+        # pass on the day someone adds a column and forgets the range.
+        assert _col_letter(len(COLS)) == LAST_COL
 
 
 class TestReset:

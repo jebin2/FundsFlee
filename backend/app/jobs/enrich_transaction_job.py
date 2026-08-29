@@ -16,6 +16,7 @@ from app.sheets import (
     update_transaction_field,
     upload_receipt_to_drive,
 )
+from app.domain.transactions.failure import mark_failed
 
 STALE_MS = 15 * 60 * 1000
 
@@ -130,9 +131,6 @@ async def run_enrich_transaction_job(session: SheetSession, input: dict) -> None
             await run_text_parse_job(session, tx_id, region)
     except Exception as err:
         log.error("enrich", "failed", err, {"txId": tx_id})
-        try:
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
-        except Exception:
-            pass
+        await mark_failed(session.access_token, session.sheet_id, tx_id, err)
 
     log.info("enrich", "done", {"txId": tx_id})

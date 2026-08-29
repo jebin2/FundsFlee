@@ -6,6 +6,7 @@ from app.core.logger import log
 from app.services.duplicate_scan import deduplicate_new_transactions
 from app.services.expand_items import finish_placeholder, rows_from_parsed
 from app.sheets import get_transaction_by_id, update_transaction_field
+from app.domain.transactions.failure import mark_failed
 
 
 async def run_text_parse_job(session: SheetSession, tx_id: str, region: str = "") -> None:
@@ -15,7 +16,8 @@ async def run_text_parse_job(session: SheetSession, tx_id: str, region: str = ""
         await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "processing"})
         placeholder = await get_transaction_by_id(session.access_token, session.sheet_id, tx_id)
         if not placeholder or not placeholder.get("raw_input"):
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
+            await mark_failed(session.access_token, session.sheet_id, tx_id,
+                              "There is no text on this transaction to parse.")
             log.error("text-parse", "no raw_input on placeholder", None, {"txId": tx_id})
             return
 
@@ -48,8 +50,5 @@ async def run_text_parse_job(session: SheetSession, tx_id: str, region: str = ""
                  {"txId": tx_id, "parsed": len(result["transactions"]), "rows": len(written)})
     except Exception as err:
         log.error("text-parse", "failed", err, {"txId": tx_id})
-        try:
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
-        except Exception:
-            pass
+        await mark_failed(session.access_token, session.sheet_id, tx_id, err)
         raise

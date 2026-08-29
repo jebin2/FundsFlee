@@ -42,10 +42,13 @@ COLS: dict[str, tuple[int, str]] = {
     "deleted":           (24, "Y"),
     "recurrence":        (25, "Z"),
     "merge_id":          (26, "AA"),
+    # Why a row is in "failed". Written beside the status, never instead of it:
+    # the status drives the UI, this explains it to the person reading the row.
+    "failure_reason":    (27, "AB"),
 }
 
 NUM_COLS = len(COLS)
-LAST_COL = COLS["merge_id"][1]
+LAST_COL = COLS["failure_reason"][1]
 
 
 def idx(field: str) -> int:
@@ -112,6 +115,7 @@ def transaction_to_row(tx: dict) -> list:
         "TRUE" if tx.get("deleted") else "",
         _opt(tx, "recurrence"),
         _opt(tx, "merge_id"),
+        _opt(tx, "failure_reason"),
     ]
 
 
@@ -164,7 +168,7 @@ def row_to_transaction(r: list) -> dict:
     for field in (
         "original_currency", "subcategory", "item_name", "notes", "raw_input",
         "location", "duplicate_ref", "receipt_url", "receipt_id", "quantity",
-        "recurrence", "merge_id",
+        "recurrence", "merge_id", "failure_reason",
     ):
         if _js_truthy(raw(field)):
             tx[field] = raw(field)
@@ -183,9 +187,19 @@ def transaction_update_to_fields(updates: dict, now: str | None = None) -> dict:
     """Normalise a partial update into {column: cell value}.
 
     id and created_at are immutable; updated_at is always written.
+
+    Moving off "failed" clears the reason. Enforced here rather than at each
+    caller because there are a dozen of them — a retry, a re-parse, a manual
+    edit — and a reason that outlives the failure it describes is worse than no
+    reason at all: the row reads as fixed and still explains why it broke.
     """
     if now is None:
         now = now_iso()
+
+    updates = dict(updates)
+    if (updates.get("status") not in (None, "failed")
+            and "failure_reason" not in updates):
+        updates["failure_reason"] = ""
 
     fields: dict = {}
     for key in COLS:

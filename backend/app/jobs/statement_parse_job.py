@@ -18,6 +18,7 @@ from app.sheets import (
     get_transaction_by_id,
     update_transaction_field,
 )
+from app.domain.transactions.failure import mark_failed
 
 _DRIVE_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]+)")
 
@@ -34,13 +35,15 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
         await update_transaction_field(session.access_token, session.sheet_id, placeholder_id, {"status": "processing"})
         placeholder = await get_transaction_by_id(session.access_token, session.sheet_id, placeholder_id)
         if not placeholder or not placeholder.get("receipt_url"):
-            await update_transaction_field(session.access_token, session.sheet_id, placeholder_id, {"status": "failed"})
+            await mark_failed(session.access_token, session.sheet_id, placeholder_id,
+                              "The uploaded statement file is missing from this transaction.")
             log.error("statement-parse", "no receipt_url on placeholder", None, {"placeholderId": placeholder_id})
             return
 
         file_id = _receipt_file_id(placeholder["receipt_url"])
         if not file_id:
-            await update_transaction_field(session.access_token, session.sheet_id, placeholder_id, {"status": "failed"})
+            await mark_failed(session.access_token, session.sheet_id, placeholder_id,
+                              "could not extract file id")
             return
 
         downloaded = await download_receipt_from_drive(session.access_token, file_id)
@@ -78,8 +81,5 @@ async def run_statement_parse_job(session: SheetSession, placeholder_id: str) ->
         log.info("statement-parse", "done", {"placeholderId": placeholder_id, "rows": len(written)})
     except Exception as err:
         log.error("statement-parse", "failed", err, {"placeholderId": placeholder_id})
-        try:
-            await update_transaction_field(session.access_token, session.sheet_id, placeholder_id, {"status": "failed"})
-        except Exception:
-            pass
+        await mark_failed(session.access_token, session.sheet_id, placeholder_id, err)
         raise

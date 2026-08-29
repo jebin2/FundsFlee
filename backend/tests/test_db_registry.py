@@ -4,7 +4,7 @@ which is the point, and why it gets tests.
 """
 import pytest
 
-from app.db.registry import TABS, TAB_BY_NAME, col_letter, spec
+from app.db.registry import EXPECTED_HEADERS, TABS, TAB_BY_NAME, col_letter, spec
 from app.db.schema import create_table_sql, mirror_ddl, q, trigger_sql
 
 
@@ -26,8 +26,13 @@ class TestColumnLetters:
 
 
 class TestRanges:
-    def test_transactions_spans_all_27_columns(self):
-        assert spec("transactions").data_range == "transactions!A2:AA"
+    def test_transactions_spans_every_column(self):
+        # Derived, not pinned: the point is that the range covers the header
+        # tuple, whatever its length. Pinning the letter is how a range comes
+        # to stop one column short of the columns it is supposed to cover.
+        tx = spec("transactions")
+        assert tx.data_range == f"transactions!A2:{col_letter(len(EXPECTED_HEADERS))}"
+        assert tx.last_col == col_letter(len(tx.columns))
 
     def test_the_header_range_is_row_one_only(self):
         assert spec("meta").header_range == "meta!A1:B1"

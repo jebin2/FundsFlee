@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
+import { sourceLabel } from "@/domain/transactions/dispatch";
 import { EditForm, type EditFormHandle } from "@/components/transactions/EditForm";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
 import { AddInfoSheet } from "@/components/transactions/AddInfoSheet";
@@ -133,7 +134,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                 {isInFlight
                   ? (tx.status === "merging" ? "AI merging duplicates" : "AI reading receipt")
                   : isFailed
-                  ? (isMergeFail ? "Merge failed" : "AI could not read receipt")
+                  ? (isMergeFail ? "Merge failed" : `${sourceLabel(tx.source)} — processing failed`)
                   : tx.item_name ? `${tx.merchant} · ${tx.category}` : tx.category}
               </p>
             </div>
@@ -156,9 +157,14 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                     style={{ background: "var(--color-error-container)" }}>
                     <span className="material-symbols-outlined" style={{ color: "var(--color-error)", fontSize: 18 }}>error</span>
                     <p style={{ fontSize: 13, color: "var(--color-on-error-container)" }}>
+                      {/* The recorded reason when there is one — it names the
+                          actual cause instead of assuming an unreadable
+                          receipt, which was wrong for every non-receipt row. */}
                       {isMergeFail
                         ? "AI couldn't merge these duplicates. Tap retry or resolve manually."
-                        : "AI couldn't read this receipt. Fill in details below or retry."}
+                        : tx.failure_reason
+                        ? tx.failure_reason
+                        : "This transaction could not be processed. Fill in details below or retry."}
                     </p>
                   </div>
                   <button

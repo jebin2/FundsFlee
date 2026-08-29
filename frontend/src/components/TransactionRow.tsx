@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Transaction, TransactionStatus } from "@/types";
 import { formatINR } from "@/lib/format/currency";
+import { sourceLabel } from "@/domain/transactions/dispatch";
 
 export const categoryIcons: Record<string, string> = {
   "Food & Dining": "restaurant", Transport: "directions_car", Shopping: "shopping_bag",
@@ -58,8 +59,13 @@ export function TransactionRow({ tx, hasSuggestions, onSuggestionsClick, onClick
     ? "SMS parse failed — tap to retry"
     : isFailed && tx.source === "import"
     ? "Statement parse failed — tap to retry"
-    : isFailed
+    : isFailed && tx.source === "receipt"
     ? "Receipt — parse failed"
+    : isFailed
+    // Naming the source rather than assuming one. An email row labelled
+    // "Receipt — parse failed" sends you looking for a receipt that was
+    // never involved.
+    ? `${sourceLabel(tx.source)} — processing failed`
     : (tx.item_name || tx.merchant);
 
   const subtitle = [tx.merchant !== "Unknown" ? tx.merchant : null, tx.payment_method].filter(Boolean).join(" · ");

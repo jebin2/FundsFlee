@@ -24,7 +24,7 @@ EXPECTED_HEADERS = (
     "tags", "notes", "source", "raw_input", "location",
     "is_duplicate", "duplicate_ref", "created_at", "updated_at",
     "status", "receipt_url", "receipt_id", "quantity", "deleted", "recurrence",
-    "merge_id",
+    "merge_id", "failure_reason",
 )
 
 CATEGORIES_HEADERS       = ("id", "name", "parent_id", "color", "icon", "is_default", "created_at")

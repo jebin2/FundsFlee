@@ -8,9 +8,9 @@ import { useTransactionsStore } from "@/store/transactionsStore";
 import { useNetworkStore } from "@/store/networkStore";
 import { useTransactions } from "@/hooks/useTransactions";
 import { transactionsApi, transactionUrl } from "@/lib/api/transactions";
-import { receiptsApi } from "@/lib/api/receipts";
 import { duplicatesApi } from "@/lib/api/duplicates";
 import { isInFlightStatus, isFailedStatus } from "@/domain/transactions/status";
+import { canProcess, processTransaction } from "@/domain/transactions/dispatch";
 import { decodeMergeMetadata } from "@/domain/transactions/metadata";
 
 export interface TransactionSheetController {
@@ -102,17 +102,14 @@ export function useTransactionSheetController(
     if (retrying) return;
     setError(null);
     const region = localStorage.getItem("region") ?? "";
-    let req: Promise<Response>;
-    if (tx.source === "sms" || tx.source === "manual") {
-      req = fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
-    } else if (tx.source === "import") {
-      req = fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
-    } else {
-      req = receiptsApi.process(tx.id, region);
+    if (!canProcess(tx.source)) {
+      setError("There is nothing to re-run for this transaction — edit it instead.");
+      return;
     }
-    setTx((prev) => ({ ...prev, status: "processing" }));
+    setTx((prev) => ({ ...prev, status: "processing", failure_reason: undefined }));
     setView("detail");
-    req.catch(() => setError("Retry failed — please try again."));
+    processTransaction(tx, region).catch(() =>
+      setError("Retry failed — please try again."));
   }
 
   async function retryMerge() {

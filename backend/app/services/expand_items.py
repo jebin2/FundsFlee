@@ -13,6 +13,7 @@ import uuid
 from app.core.deps import SheetSession
 from app.core.logger import log
 from app.sheets import append_transactions, update_transaction_field
+from app.domain.transactions.failure import mark_failed
 
 
 def item_quantity(qty: float | None, unit: str | None = None) -> str | None:
@@ -175,8 +176,8 @@ async def finish_placeholder(
     hand them to the duplicate scan.
     """
     if not rows:
-        await update_transaction_field(
-            session.access_token, session.sheet_id, placeholder_id, {"status": "failed"})
+        await mark_failed(session.access_token, session.sheet_id, placeholder_id,
+                          "The AI read the document but found no transaction in it.")
         return []
 
     if len(rows) == 1:

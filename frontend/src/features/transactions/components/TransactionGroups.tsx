@@ -90,6 +90,16 @@ export function TransactionGroups({
                       </button>
                     </div>
                   )}
+                  {/* The reason, where the person deciding what to do can read
+                      it. It used to exist only in a server log. */}
+                  {isFailed && tx.failure_reason && (
+                    <p
+                      className="ml-4 mt-1 px-3"
+                      style={{ fontSize: 12, color: "var(--color-on-surface-variant)", lineHeight: 1.4 }}
+                    >
+                      {tx.failure_reason}
+                    </p>
+                  )}
                   {isFailed && (
                     <div className="ml-4 mt-1 flex gap-2 px-3">
                       <button

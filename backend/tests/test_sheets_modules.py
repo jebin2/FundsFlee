@@ -12,7 +12,7 @@ import pytest
 
 import app.sheets.meta as meta_mod
 import app.sheets.transactions as transactions_mod
-from app.db import mirror
+from app.db import mirror, spec
 from app.sheets.transaction_schema import transaction_to_row
 from tests.test_transaction_schema import BASE_TX
 
@@ -89,7 +89,7 @@ class TestWritesLandLocally:
         asyncio.run(transactions_mod.update_transaction_field(
             "tok", "sheet", "missing", {"merchant": "X"}))
         assert mirror.rows("tok", "sheet", "transactions") == [
-            ["t1"] + [""] * 26]
+            ["t1"] + [""] * (len(spec("transactions").columns) - 1)]
 
     def test_a_soft_delete_hides_the_row_but_keeps_it(self, no_api, seed):
         seed("sheet", "transactions", [["t1"]])

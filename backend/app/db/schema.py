@@ -93,6 +93,36 @@ SYNC_DDL: tuple[str, ...] = (
 )
 
 
+def add_missing_columns(conn) -> list[str]:
+    """Widen existing tables to match the registry.
+
+    CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+    a column added to a header tuple would reach a fresh mirror and no other.
+    Every deployed mirror is an existing one, which makes this the only path
+    that matters in practice.
+
+    Append-only, like the sheet: a new column lands at the end, in the same
+    position ensure_transaction_schema_sync gives it in the header row. Nothing
+    here drops or reorders — that would repoint every value at the wrong field.
+    """
+    added = []
+    for spec in TABS:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({q(spec.name)})")}
+        if not have:
+            continue                      # table not created yet; DDL handles it
+        for col in spec.columns:
+            if col in have:
+                continue
+            conn.execute(
+                f"ALTER TABLE {q(spec.name)} ADD COLUMN {q(col)} TEXT NOT NULL DEFAULT ''")
+            added.append(f"{spec.name}.{col}")
+    # Deliberately not marking rows dirty: the column is empty everywhere, so
+    # pushing every row to write a blank cell would rewrite the whole sheet to
+    # say nothing. The header widens, and each row carries the new column the
+    # next time it changes for a real reason.
+    return added
+
+
 def mirror_ddl() -> list[str]:
     """Every statement needed to build an empty mirror, in order.
 

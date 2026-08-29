@@ -18,6 +18,7 @@ from app.sheets import (
 )
 from app.services.duplicate_scan import deduplicate_new_transactions
 from app.services.expand_items import finish_placeholder, rows_from_parsed
+from app.domain.transactions.failure import mark_failed
 
 VALID_RECEIPT_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 
@@ -58,7 +59,8 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
         log.error("receipt", "placeholder has no receipt_url", None,
                   {"txId": tx_id, "source": placeholder.get("source"),
                    "status": placeholder.get("status")})
-        await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
+        await mark_failed(session.access_token, session.sheet_id, tx_id,
+                          "There is no receipt attached to this transaction.")
         return {"error": "Receipt URL not found", "status": 404}
 
     await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "processing"})
@@ -68,7 +70,8 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
         if not file_id:
             log.error("receipt", "could not extract Drive file ID from URL", None,
                       {"txId": tx_id, "url": placeholder["receipt_url"]})
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
+            await mark_failed(session.access_token, session.sheet_id, tx_id,
+                              "could not extract file id")
             return {"error": "Could not extract file ID", "status": 400}
 
         log.info("receipt", "downloading image from Drive", {"txId": tx_id, "fileId": file_id})
@@ -152,8 +155,5 @@ async def process_receipt(session: SheetSession, request: dict) -> dict:
         return {"ok": True, "txId": receipt_id, "itemCount": len(written)}
     except Exception as err:
         log.error("receipt", "failed", err, {"txId": tx_id})
-        try:
-            await update_transaction_field(session.access_token, session.sheet_id, tx_id, {"status": "failed"})
-        except Exception:
-            pass
+        await mark_failed(session.access_token, session.sheet_id, tx_id, err)
         raise

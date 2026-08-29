@@ -31,6 +31,7 @@ export interface Transaction {
   deleted?: boolean;         // col Y — soft delete flag
   recurrence?: RecurrencePeriod; // col Z — recurring transaction period
   merge_id?: string;         // col AA — shared ID linking merged tx + its sources
+  failure_reason?: string;   // col AB — why status is "failed", in words
 }
 
 export interface QueueItem {

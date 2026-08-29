@@ -118,8 +118,12 @@ def ensure_transaction_schema_sync(sheets, sheet_id: str) -> None:
     if sheet_id in _schema_checked:
         return
 
+    # Derived, never typed. A literal A1:AA1 here reads and writes 27 columns
+    # whatever EXPECTED_HEADERS says, so the 28th would silently never arrive —
+    # which is the same failure this module's docstring already describes once.
+    header_range = spec("transactions").header_range
     res = sheets.spreadsheets().values().get(
-        spreadsheetId=sheet_id, range="transactions!A1:AA1"
+        spreadsheetId=sheet_id, range=header_range
     ).execute()
     current = (res.get("values") or [[]])[0]
     if len(current) >= len(EXPECTED_HEADERS):
@@ -127,7 +131,7 @@ def ensure_transaction_schema_sync(sheets, sheet_id: str) -> None:
         return
     sheets.spreadsheets().values().update(
         spreadsheetId=sheet_id,
-        range="transactions!A1:AA1",
+        range=header_range,
         valueInputOption="RAW",
         body={"values": [list(EXPECTED_HEADERS)]},
     ).execute()

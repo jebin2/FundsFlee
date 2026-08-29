@@ -13,7 +13,8 @@ import sqlite3
 from pathlib import Path
 
 from app.config import settings
-from app.db.schema import mirror_ddl
+from app.core.logger import log
+from app.db.schema import add_missing_columns, mirror_ddl
 
 # Beside data/users.json — same directory, same backup story.
 DB_DIR = Path(settings.user_store_file).parent / "sheets"
@@ -78,6 +79,12 @@ def connect(sheet_id: str) -> sqlite3.Connection:
     if key not in _schema_ready:
         for stmt in mirror_ddl():
             conn.execute(stmt)
+        # After the DDL: a table that already existed is untouched by
+        # CREATE TABLE IF NOT EXISTS, so this is what carries a new column to a
+        # mirror that was built before it was declared.
+        added = add_missing_columns(conn)
+        if added:
+            log.info("db", "mirror widened", {"columns": added})
         _schema_ready.add(key)
         try:
             path.chmod(0o600)
