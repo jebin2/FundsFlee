@@ -14,6 +14,9 @@ export interface RerunPreview {
   subject: string;
   from: string;
   transactions: RerunAffected[];
+  // True when a re-run of this same email is already in flight — from another
+  // tab, or a sheet that was closed while it ran.
+  rerunning: boolean;
 }
 
 export const emailApi = {

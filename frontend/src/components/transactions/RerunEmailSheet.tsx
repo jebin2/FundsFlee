@@ -57,6 +57,9 @@ export function RerunEmailSheet({ tx, onClose, onDone }: RerunEmailSheetProps) {
   }
 
   const affected = preview?.transactions ?? [];
+  // Already running elsewhere — the server refuses a second one, so the button
+  // says so instead of offering a click that can only fail.
+  const busy = running || (preview?.rerunning ?? false);
   const editedCount = affected.filter((t) => t.edited).length;
 
   return (
@@ -91,6 +94,15 @@ export function RerunEmailSheet({ tx, onClose, onDone }: RerunEmailSheetProps) {
 
         {preview && (
           <>
+            {preview.rerunning && (
+              <p
+                style={{ fontSize: 13, color: "var(--color-on-surface-variant)", lineHeight: 1.5 }}
+                className="mb-3"
+              >
+                This email is already being re-read. It will finish on its own —
+                close this and pull to refresh in a moment.
+              </p>
+            )}
             <p
               style={{ fontSize: 13, color: "var(--color-on-surface-variant)", lineHeight: 1.5 }}
               className="mb-3"
@@ -159,16 +171,16 @@ export function RerunEmailSheet({ tx, onClose, onDone }: RerunEmailSheetProps) {
               </button>
               <button
                 onClick={run}
-                disabled={running || affected.length === 0}
+                disabled={busy || affected.length === 0}
                 className="flex-1 py-3 rounded-2xl font-medium"
                 style={{
                   background: "var(--color-primary)",
                   color: "var(--color-on-primary)",
                   fontSize: 14,
-                  opacity: running || affected.length === 0 ? 0.6 : 1,
+                  opacity: busy || affected.length === 0 ? 0.6 : 1,
                 }}
               >
-                {running ? "Re-reading…" : "Re-read"}
+                {busy ? "Re-reading…" : "Re-read"}
               </button>
             </div>
           </>

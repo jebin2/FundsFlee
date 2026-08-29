@@ -9,6 +9,8 @@ Two calls, deliberately: preview() says what would be replaced, rerun() does
 it. A mail can hold several payments, so a re-run can discard rows the person
 edited by hand, and that is not a thing to do without showing them first.
 """
+import asyncio
+
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
@@ -23,6 +25,19 @@ from app.sheets import (
 )
 from app.sheets.client import get_gmail_client
 from app.sheets.parsed_emails import find_email_for_tx
+
+
+# One re-run per email at a time. The frontend disables its own button, which
+# covers a double-tap and nothing else: closing the sheet and clicking again
+# from the list, a second tab, or a phone reissuing the POST all start a second
+# run. Both would read the same tx_ids, both would append, both would retire
+# the originals — two live sets of rows, at double the AI cost. The duplicate
+# scan only FLAGS duplicates, so nothing downstream would clean that up.
+#
+# Single uvicorn worker, so an in-process set is the whole mechanism, as in
+# app/db/hydrate.
+_in_flight: set[tuple[str, str]] = set()
+_in_flight_guard = asyncio.Lock()
 
 
 class RerunError(Exception):
@@ -77,15 +92,45 @@ async def preview(session: SheetSession, tx_id: str) -> dict:
         "subject": record["subject"],
         "from": record["from"],
         "transactions": affected,
+        "rerunning": is_rerunning(session.sheet_id, record["email_id"]),
     }
 
 
 async def rerun(session: SheetSession, tx_id: str) -> dict:
-    """Re-read the mail and replace every row it produced."""
+    """Re-read the mail and replace every row it produced.
+
+    At most one at a time per email — a second overlapping run would double the
+    mail's transactions rather than replace them.
+    """
     record = await _email_of(session, tx_id)
+    msg_id = record["email_id"]
+    key = (session.sheet_id, msg_id)
+
+    async with _in_flight_guard:
+        if key in _in_flight:
+            raise RerunError(
+                "This email is already being re-read. Give it a moment.", 409)
+        _in_flight.add(key)
+    try:
+        return await _rerun(session, record, tx_id)
+    finally:
+        async with _in_flight_guard:
+            _in_flight.discard(key)
+
+
+def is_rerunning(sheet_id: str, email_id: str) -> bool:
+    return (sheet_id, email_id) in _in_flight
+
+
+async def _rerun(session: SheetSession, record: dict, tx_id: str) -> dict:
     msg_id = record["email_id"]
     log.info("email-rerun", "started", {"txId": tx_id, "messageId": msg_id})
 
+    # Note what is NOT done here: the rows are not flipped to "processing" for
+    # the duration. Every write stamps updated_at, so marking and restoring
+    # would leave every row looking edited by hand — which is precisely the
+    # signal the confirmation uses to warn about losing an edit. In-flight
+    # state is reported by preview() from memory instead, and touches nothing.
     gmail = get_gmail_client(session.access_token)
     try:
         message = await fetch_message(gmail, msg_id)

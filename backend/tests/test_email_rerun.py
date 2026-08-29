@@ -193,3 +193,124 @@ class TestWhenItCannotRun:
         with pytest.raises(mod.RerunError) as err:
             asyncio.run(mod.rerun(SESSION, "t1"))
         assert "ai_null" in str(err.value)
+
+
+class TestASecondClickWhileOneIsRunning:
+    """The frontend disables its own button, which covers a double-tap and
+    nothing else — closing the sheet and clicking again from the list, a second
+    tab, or a phone reissuing the POST all start a second run. Two overlapping
+    runs read the same tx_ids, both append and both retire the originals, so
+    the mail's transactions end up doubled rather than replaced. The duplicate
+    scan only FLAGS duplicates, so nothing downstream cleans that up.
+    """
+
+    @pytest.fixture(autouse=True)
+    def clean(self):
+        mod._in_flight.clear()
+        yield
+        mod._in_flight.clear()
+
+    def test_the_second_one_is_refused(self, wired, monkeypatch):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_parse(*a, **kw):
+            started.set()
+            await release.wait()
+            return {"parsed_rows": [(a_transaction(), "s", "f")],
+                    "skip_reasons": [], "failed_groups": 0, "groups": 1}
+
+        monkeypatch.setattr(mod, "parse_message", slow_parse)
+
+        async def scenario():
+            first = asyncio.create_task(mod.rerun(SESSION, "t1"))
+            await started.wait()
+            with pytest.raises(mod.RerunError) as err:
+                await mod.rerun(SESSION, "t2")   # same email, other row
+            assert err.value.status == 409
+            release.set()
+            await first
+
+        asyncio.run(scenario())
+
+    def test_only_one_set_of_rows_is_written(self, wired, monkeypatch):
+        started = asyncio.Event()
+        release = asyncio.Event()
+        calls = []
+
+        async def slow_parse(*a, **kw):
+            calls.append(1)
+            started.set()
+            await release.wait()
+            return {"parsed_rows": [(a_transaction(), "s", "f")],
+                    "skip_reasons": [], "failed_groups": 0, "groups": 1}
+
+        monkeypatch.setattr(mod, "parse_message", slow_parse)
+
+        async def scenario():
+            first = asyncio.create_task(mod.rerun(SESSION, "t1"))
+            await started.wait()
+            with pytest.raises(mod.RerunError):
+                await mod.rerun(SESSION, "t1")
+            release.set()
+            return await first
+
+        result = asyncio.run(scenario())
+        # One AI call, one new row, and the two originals retired exactly once.
+        assert calls == [1]
+        assert live_ids() == result["transactionIds"]
+
+    def test_the_lock_is_released_when_a_run_fails(self, wired, monkeypatch):
+        monkeypatch.setattr(mod, "fetch_message", _async(Exception("404")))
+        with pytest.raises(mod.RerunError):
+            asyncio.run(mod.rerun(SESSION, "t1"))
+        # Otherwise one failure would block that email until the next restart.
+        assert not mod.is_rerunning("sheet", "m1")
+
+    def test_a_different_email_is_not_blocked(self, wired, monkeypatch, seed):
+        seed("sheet", "transactions", [tx_row("t3")])
+        seed("sheet", "parsed_emails", [email_row("m2", ["t3"], "Blinkit order")])
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_parse(*a, **kw):
+            started.set()
+            await release.wait()
+            return {"parsed_rows": [(a_transaction(), "s", "f")],
+                    "skip_reasons": [], "failed_groups": 0, "groups": 1}
+
+        monkeypatch.setattr(mod, "parse_message", slow_parse)
+
+        async def scenario():
+            first = asyncio.create_task(mod.rerun(SESSION, "t1"))
+            await started.wait()
+            # m2 is a different message — it has no reason to wait on m1.
+            assert not mod.is_rerunning("sheet", "m2")
+            release.set()
+            await first
+
+        asyncio.run(scenario())
+
+    def test_the_preview_says_one_is_running(self, wired, monkeypatch):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_parse(*a, **kw):
+            started.set()
+            await release.wait()
+            return {"parsed_rows": [(a_transaction(), "s", "f")],
+                    "skip_reasons": [], "failed_groups": 0, "groups": 1}
+
+        monkeypatch.setattr(mod, "parse_message", slow_parse)
+
+        async def scenario():
+            first = asyncio.create_task(mod.rerun(SESSION, "t1"))
+            await started.wait()
+            assert (await mod.preview(SESSION, "t1"))["rerunning"] is True
+            release.set()
+            await first
+
+        asyncio.run(scenario())
+
+    def test_a_quiet_email_is_not_reported_as_running(self, wired):
+        assert asyncio.run(mod.preview(SESSION, "t1"))["rerunning"] is False
