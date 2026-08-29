@@ -22,8 +22,8 @@ import { TransactionGroups } from "@/features/transactions/components/Transactio
 import { DuplicateGroupsList } from "@/features/transactions/components/DuplicateGroupsList";
 import { SuggestionsSheet } from "@/features/transactions/components/SuggestionsSheet";
 import { DuplicateGroupSheet } from "@/features/transactions/components/DuplicateGroupSheet";
-import { receiptsApi } from "@/lib/api/receipts";
 import { decodeMergeMetadata } from "@/domain/transactions/metadata";
+import { processTransaction } from "@/domain/transactions/dispatch";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function TransactionsContent() {
@@ -138,9 +138,15 @@ function TransactionsContent() {
                 onTransactionClick={setSelectedTx}
                 onResolveDuplicate={resolveDuplicate}
                 searchActive={!!search}
-                onRetryReceipt={(txId) => {
-                  updateTransaction(txId, { status: "queued" });
-                  receiptsApi.process(txId, region).catch(() => {});
+                onRetryReceipt={(tx) => {
+                  // Route by source, like the poller does. This used to call
+                  // the receipt processor for every failed row whatever its
+                  // source, which is how an email row ended up asking for a
+                  // receipt URL it never had.
+                  updateTransaction(tx.id, { status: "queued" });
+                  processTransaction(tx, region).then((routed) => {
+                    if (!routed) updateTransaction(tx.id, { status: "failed" });
+                  }).catch(() => {});
                 }}
               />
             </ErrorBoundary>

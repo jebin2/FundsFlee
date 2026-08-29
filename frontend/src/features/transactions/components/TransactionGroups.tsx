@@ -4,6 +4,7 @@ import { TransactionRow } from "@/components/TransactionRow";
 import { formatINR } from "@/lib/format/currency";
 import { formatTransactionDateLabel } from "@/features/transactions/utils/list";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { canProcess } from "@/domain/transactions/dispatch";
 
 interface TransactionGroupsProps {
   sortedDates: string[];
@@ -12,7 +13,7 @@ interface TransactionGroupsProps {
   onSuggestionsClick: (txId: string) => void;
   onTransactionClick: (tx: Transaction) => void;
   onResolveDuplicate: (tx: Transaction, action: "keep" | "remove") => void;
-  onRetryReceipt: (txId: string) => void;
+  onRetryReceipt: (tx: Transaction) => void;
   searchActive: boolean;
 }
 
@@ -98,13 +99,17 @@ export function TransactionGroups({
                       >
                         Fill manually
                       </button>
-                      <button
-                        onClick={() => onRetryReceipt(tx.id)}
-                        className="px-4 py-1.5 rounded-xl text-sm font-medium"
-                        style={{ background: "var(--color-primary-fixed)", color: "var(--color-primary)" }}
-                      >
-                        Retry AI
-                      </button>
+                      {/* No processor, nothing to retry — offering the button
+                          only sends the row somewhere that cannot handle it. */}
+                      {canProcess(tx.source) && (
+                        <button
+                          onClick={() => onRetryReceipt(tx)}
+                          className="px-4 py-1.5 rounded-xl text-sm font-medium"
+                          style={{ background: "var(--color-primary-fixed)", color: "var(--color-primary)" }}
+                        >
+                          Retry AI
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

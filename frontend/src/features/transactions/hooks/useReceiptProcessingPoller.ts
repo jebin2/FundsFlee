@@ -2,28 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import type { Transaction } from "@/types";
-import { receiptsApi } from "@/lib/api/receipts";
-
-// Dispatch a queued transaction to the correct background processor based on source.
-// Every branch is named: a source with no processor is a bug in whatever queued
-// the row, and sending it to the receipt processor only turns that bug into a
-// misleading 404 about a missing receipt URL.
-async function processTransaction(tx: Transaction, region: string): Promise<boolean> {
-  if (tx.source === "sms" || tx.source === "manual") {
-    await fetch(`/api/parse/text/process?txId=${tx.id}&region=${encodeURIComponent(region)}`, { method: "POST" });
-  } else if (tx.source === "import") {
-    await fetch(`/api/parse/statement/process?txId=${tx.id}`, { method: "POST" });
-  } else if (tx.source === "receipt") {
-    await receiptsApi.process(tx.id, region);
-  } else {
-    console.warn("[poller] queued transaction with no processor for source", {
-      id: tx.id,
-      source: tx.source,
-    });
-    return false;
-  }
-  return true;
-}
+import { processTransaction } from "@/domain/transactions/dispatch";
 
 export function useReceiptProcessingPoller(
   transactions: Transaction[],
