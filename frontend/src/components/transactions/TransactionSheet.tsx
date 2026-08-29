@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { Transaction } from "@/types";
 import { formatINR, categoryIcons } from "@/components/TransactionRow";
-import { sourceLabel } from "@/domain/transactions/dispatch";
+import { canProcess, canRerunEmail, sourceLabel } from "@/domain/transactions/dispatch";
+import { RerunEmailSheet } from "@/components/transactions/RerunEmailSheet";
 import { EditForm, type EditFormHandle } from "@/components/transactions/EditForm";
 import { ReceiptItemsPopup } from "@/components/transactions/ReceiptItemsPopup";
 import { AddInfoSheet } from "@/components/transactions/AddInfoSheet";
@@ -45,6 +46,7 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
     isInFlight, isFailed, isMergeFail,
     handleDelete, retryAI, retryMerge, onTxUpdated, handleEnrichSubmitted,
   } = useTransactionSheetController(initialTx, onClose);
+  const [rerunOpen, setRerunOpen] = useState(false);
 
   const heroColor = isInFlight ? "var(--color-secondary)" : isFailed ? "var(--color-error)" : "var(--color-primary)";
 
@@ -167,16 +169,29 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
                         : "This transaction could not be processed. Fill in details below or retry."}
                     </p>
                   </div>
-                  <button
-                    onClick={isMergeFail ? retryMerge : retryAI}
-                    disabled={retrying}
-                    className="self-start flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium"
-                    style={{ background: "var(--color-secondary-container)", color: "var(--color-on-secondary-container)", opacity: retrying ? 0.6 : 1, cursor: "pointer" }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                      {isMergeFail ? "merge" : "auto_fix_high"}
-                    </span>
-                    {retrying ? "Retrying…" : isMergeFail ? "Retry Merge" : "Retry AI"}
-                  </button>
+                  {/* An email row has nothing stored to re-parse — its retry
+                      goes back to Gmail, behind a confirmation, because one
+                      mail can hold several transactions. */}
+                  {!isMergeFail && canRerunEmail(tx.source) ? (
+                    <button
+                      onClick={() => setRerunOpen(true)}
+                      className="self-start flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium"
+                      style={{ background: "var(--color-secondary-container)", color: "var(--color-on-secondary-container)", cursor: "pointer" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>mark_email_read</span>
+                      Re-read email
+                    </button>
+                  ) : (isMergeFail || canProcess(tx.source)) && (
+                    <button
+                      onClick={isMergeFail ? retryMerge : retryAI}
+                      disabled={retrying}
+                      className="self-start flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium"
+                      style={{ background: "var(--color-secondary-container)", color: "var(--color-on-secondary-container)", opacity: retrying ? 0.6 : 1, cursor: "pointer" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                        {isMergeFail ? "merge" : "auto_fix_high"}
+                      </span>
+                      {retrying ? "Retrying…" : isMergeFail ? "Retry Merge" : "Retry AI"}
+                    </button>
+                  )}
                 </div>
               )}
               <EditForm ref={editFormRef} tx={tx} onSaved={onTxUpdated} />
@@ -254,6 +269,16 @@ export function TransactionSheet({ tx: initialTx, onClose }: TransactionSheetPro
 
       {showAddInfo && (
         <AddInfoSheet tx={tx} onClose={() => setShowAddInfo(false)} onSubmitted={handleEnrichSubmitted} />
+      )}
+
+      {rerunOpen && (
+        <RerunEmailSheet
+          tx={tx}
+          onClose={() => setRerunOpen(false)}
+          // The rows this sheet was showing have just been replaced, so there
+          // is nothing left here to look at.
+          onDone={() => { setRerunOpen(false); onClose(); }}
+        />
       )}
     </>
   );

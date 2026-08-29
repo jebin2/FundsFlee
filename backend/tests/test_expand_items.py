@@ -86,7 +86,9 @@ class TestEveryWriterSharesTheRule:
     WRITERS = [
         "app/services/receipt_processing_service.py",
         "app/jobs/statement_parse_job.py",
-        "app/jobs/email_import_job.py",
+        # The email path builds its rows in email_import/message.py, which the
+        # import job and the single-mail re-run both call.
+        "app/email_import/message.py",
         "app/jobs/text_parse_job.py",
         "app/routers/shortcut.py",
     ]

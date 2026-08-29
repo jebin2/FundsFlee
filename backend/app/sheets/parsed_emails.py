@@ -151,3 +151,27 @@ async def get_parsed_email_stats(access_token: str, sheet_id: str) -> dict:
                                    if _at(r, status_at) == EXHAUSTED_STATUS),
         }
     return await asyncio.to_thread(work)
+
+
+def _find_email_for_tx_sync(access_token: str, sheet_id: str, tx_id: str) -> dict | None:
+    """The recorded email a transaction came from, via its tx_ids list.
+
+    The transaction row itself keeps only "subject | from" in raw_input, so
+    this mapping is the only route from a row back to the message that made it.
+    """
+    for r in _get_all_rows_sync(access_token, sheet_id):
+        ids = [i for i in _at(r, COLS["tx_ids"]).split(",") if i]
+        if tx_id in ids:
+            return {
+                "email_id": _at(r, COLS["email_id"]),
+                "from": _at(r, COLS["from"]),
+                "subject": _at(r, COLS["subject"]),
+                "tx_ids": ids,
+                "status": _at(r, COLS["status"]),
+                "attempts": _int_at(r, COLS["attempts"]),
+            }
+    return None
+
+
+async def find_email_for_tx(access_token: str, sheet_id: str, tx_id: str) -> dict | None:
+    return await asyncio.to_thread(_find_email_for_tx_sync, access_token, sheet_id, tx_id)

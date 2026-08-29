@@ -19,6 +19,7 @@ import { useDuplicateResolution } from "@/features/transactions/hooks/useDuplica
 import { InFlightReceiptBanner } from "@/features/transactions/components/InFlightReceiptBanner";
 import { TransactionFilters } from "@/features/transactions/components/TransactionFilters";
 import { TransactionGroups } from "@/features/transactions/components/TransactionGroups";
+import { RerunEmailSheet } from "@/components/transactions/RerunEmailSheet";
 import { DuplicateGroupsList } from "@/features/transactions/components/DuplicateGroupsList";
 import { SuggestionsSheet } from "@/features/transactions/components/SuggestionsSheet";
 import { DuplicateGroupSheet } from "@/features/transactions/components/DuplicateGroupSheet";
@@ -33,6 +34,7 @@ function TransactionsContent() {
   const updateTransaction = useTransactionsStore((s) => s.updateTransaction);
   const [loading, setLoading] = useState(transactions.length === 0);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [rerunTx, setRerunTx] = useState<Transaction | null>(null);
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [showDupsOnly, setShowDupsOnly] = useState(searchParams.get("duplicates_only") === "true");
@@ -138,6 +140,7 @@ function TransactionsContent() {
                 onTransactionClick={setSelectedTx}
                 onResolveDuplicate={resolveDuplicate}
                 searchActive={!!search}
+                onRerunEmail={setRerunTx}
                 onRetryReceipt={(tx) => {
                   // Route by source, like the poller does. This used to call
                   // the receipt processor for every failed row whatever its
@@ -193,6 +196,17 @@ function TransactionsContent() {
 
       {selectedTx && (
         <TransactionSheet tx={selectedTx} onClose={() => setSelectedTx(null)} />
+      )}
+
+      {rerunTx && (
+        <RerunEmailSheet
+          tx={rerunTx}
+          onClose={() => setRerunTx(null)}
+          onDone={() => {
+            setRerunTx(null);
+            refresh();
+          }}
+        />
       )}
 
       {activeDupGroup && (

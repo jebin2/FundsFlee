@@ -4,7 +4,7 @@ import { TransactionRow } from "@/components/TransactionRow";
 import { formatINR } from "@/lib/format/currency";
 import { formatTransactionDateLabel } from "@/features/transactions/utils/list";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { canProcess } from "@/domain/transactions/dispatch";
+import { canProcess, canRerunEmail } from "@/domain/transactions/dispatch";
 
 interface TransactionGroupsProps {
   sortedDates: string[];
@@ -14,6 +14,7 @@ interface TransactionGroupsProps {
   onTransactionClick: (tx: Transaction) => void;
   onResolveDuplicate: (tx: Transaction, action: "keep" | "remove") => void;
   onRetryReceipt: (tx: Transaction) => void;
+  onRerunEmail: (tx: Transaction) => void;
   searchActive: boolean;
 }
 
@@ -25,6 +26,7 @@ export function TransactionGroups({
   onTransactionClick,
   onResolveDuplicate,
   onRetryReceipt,
+  onRerunEmail,
   searchActive,
 }: TransactionGroupsProps) {
   if (sortedDates.length === 0) {
@@ -118,6 +120,18 @@ export function TransactionGroups({
                           style={{ background: "var(--color-primary-fixed)", color: "var(--color-primary)" }}
                         >
                           Retry AI
+                        </button>
+                      )}
+                      {/* An email row has no local input to re-parse, so its
+                          retry goes back to Gmail — behind a confirmation,
+                          because one mail can hold several transactions. */}
+                      {canRerunEmail(tx.source) && (
+                        <button
+                          onClick={() => onRerunEmail(tx)}
+                          className="px-4 py-1.5 rounded-xl text-sm font-medium"
+                          style={{ background: "var(--color-primary-fixed)", color: "var(--color-primary)" }}
+                        >
+                          Re-read email
                         </button>
                       )}
                     </div>

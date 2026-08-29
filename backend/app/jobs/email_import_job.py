@@ -1,19 +1,18 @@
 """Email import job — port of src/server/jobs/emailImportJob.ts."""
 import asyncio
 import time
-from datetime import datetime, timezone
 
-from app.ai.parser import parse_units
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
 from app.core.logger import log
-from app.email_import.attachments import fetch_attachments
 from app.email_import.config import read_email_import_config
 from app.email_import.gmail_query import build_gmail_query
-from app.email_import.mime_text_extractor import extract_payload_text
-from app.extract.html_text import extract_email_text
-from app.extract.pipeline import collect_message_units, group_units
-from app.services.expand_items import rows_from_parsed
+from app.email_import.message import (
+    _group_hard_failed,
+    build_rows,
+    fetch_message,
+    parse_message,
+)
 from app.services.duplicate_scan import deduplicate_new_transactions
 from app.sheets import (
     append_transactions,
@@ -94,18 +93,6 @@ def _status_of(states: dict, msg_id: str) -> str:
 def _attempts_of(states: dict, msg_id: str) -> int:
     """Attempts INCLUDING the one being recorded now."""
     return (states.get(msg_id) or {}).get("attempts", 0) + 1
-
-
-def _group_hard_failed(reason: str | None) -> bool:
-    """A group that errored rather than reaching a verdict.
-
-    Only parse_error qualifies: the AI chain raised — unreachable, rate-limited,
-    401. ai_null deliberately does NOT. In a forwarded batch, a group holding a
-    delivery notice rather than a payment returns ai_null perfectly correctly,
-    and counting that as a failure would mark ordinary mail "partial" and claim
-    rows had been lost when none had.
-    """
-    return reason == "parse_error"
 
 
 def _should_retry_empty(reasons: list[str], msg_id: str, states: dict) -> bool:
@@ -205,27 +192,13 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
 
             from_ = ""
             subject = ""
-            body_text = ""
             received_time = "00:00"
-            received_date = None
-            payload: dict = {}
 
             try:
-                msg_res = await asyncio.to_thread(
-                    lambda mid=msg_id: gmail.users().messages().get(userId="me", id=mid, format="full").execute()
-                )
-                payload = msg_res.get("payload") or {}
-                headers = payload.get("headers") or []
-                from_ = next((h.get("value") or "" for h in headers if (h.get("name") or "").lower() == "from"), "")
-                subject = next((h.get("value") or "" for h in headers if (h.get("name") or "").lower() == "subject"), "")
-                if msg_res.get("internalDate"):
-                    received = datetime.fromtimestamp(
-                        int(msg_res["internalDate"]) / 1000, tz=timezone.utc
-                    )
-                    received_time = received.strftime("%H:%M")
-                    received_date = received.strftime("%Y-%m-%d")
-                extracted = extract_payload_text(payload)
-                body_text = extract_email_text(extracted["text"], extracted["mimeType"])
+                message = await fetch_message(gmail, msg_id)
+                from_ = message["from"]
+                subject = message["subject"]
+                received_time = message["received_time"]
             except Exception:
                 try:
                     await record_parsed_email(session.access_token, session.sheet_id, {
@@ -240,44 +213,13 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 result["failed"] += 1
                 continue
 
-            # Opt-in. Off, or with nothing attached, this collapses to a
-            # single group holding just the body — the same call, fewer units.
-            attachments = []
-            if config["attachments"]:
-                try:
-                    attachments = await fetch_attachments(gmail, msg_id, payload)
-                except Exception as err:
-                    log.error("email", "attachment fetch failed", err, {"messageId": msg_id})
-
-            units = await collect_message_units(
-                {"kind": "email", "text": body_text, "from": from_,
-                 "subject": subject, "date": received_date, "source": subject},
-                attachments, subject,
-            )
-            # One AI call per group. A group is one payment (an order plus its
-            # component invoices); a forwarded alert is its own group, so a mail
-            # carrying ten of them yields ten transactions, not one.
-            groups = group_units(units)
-            # (transaction, origin subject, origin from). Each forwarded alert
-            # came from a different message; stamping every row with the outer
-            # forward's headers loses which one it actually was.
-            parsed_rows: list[tuple[dict, str, str]] = []
-            skip_reasons = []
-            failed_groups = 0
-            for i, group in enumerate(groups, 1):
-                if len(groups) > 1:
-                    log.info("email", f"group {i}/{len(groups)}",
-                             {"messageId": msg_id, "units": len(group)})
-                parsed = await parse_units(group, config["region"], today)
-                origin = next((u for u in group if u["kind"] == "email"), None)
-                origin_subject = (origin or {}).get("subject") or subject
-                origin_from = (origin or {}).get("from") or from_
-                for tx in parsed["transactions"]:
-                    parsed_rows.append((tx, origin_subject, origin_from))
-                if parsed["skipReason"]:
-                    skip_reasons.append(parsed["skipReason"])
-                if _group_hard_failed(parsed["skipReason"]):
-                    failed_groups += 1
+            # Attachments are opt-in. Off, or with nothing attached, this
+            # collapses to a single group holding just the body.
+            outcome = await parse_message(gmail, message, config["region"], today,
+                                          with_attachments=config["attachments"])
+            parsed_rows = outcome["parsed_rows"]
+            skip_reasons = outcome["skip_reasons"]
+            failed_groups = outcome["failed_groups"]
 
             transactions = [tx for tx, _, _ in parsed_rows]
             skip_reason = skip_reasons[0] if skip_reasons and not transactions else None
@@ -318,31 +260,11 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 continue
 
             now = now_iso()
-            msg_tx_ids: list[str] = []
-            rows_to_write: list[dict] = []
-            for transaction, origin_subject, origin_from in parsed_rows:
-                base = {
-                    "date": transaction["date"],
-                    "time": transaction["time"] if transaction["time"] != "00:00" else received_time,
-                    "merchant": transaction["merchant"],
-                    "category": transaction["category"],
-                    "subcategory": transaction.get("subcategory"),
-                    "original_amount": transaction.get("original_amount"),
-                    "original_currency": transaction.get("original_currency"),
-                    "payment_method": transaction["payment_method"],
-                    "notes": transaction.get("notes"),
-                    "tags": transaction.get("tags"),
-                    "source": "email",
-                    "raw_input": f"{origin_subject} | {origin_from}"[:500],
-                }
-
-                built = rows_from_parsed(base, transaction, now, transaction["amount"])
-
-                for tx in built:
-                    rows_to_write.append(tx)
-                    msg_tx_ids.append(tx["id"])
+            rows_to_write = build_rows(parsed_rows, received_time, now)
+            msg_tx_ids = [tx["id"] for tx in rows_to_write]
+            for transaction, _, _ in parsed_rows:
                 log.info("email", f"imported ₹{transaction['amount']} @ {transaction['merchant']}",
-                         {"category": transaction["category"], "rows": len(built), "subject": subject})
+                         {"category": transaction["category"], "subject": subject})
 
             # One request for the whole message, however many rows it produced.
             await append_transactions(session.access_token, session.sheet_id, rows_to_write)
@@ -356,7 +278,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             partial = failed_groups > 0
             if partial:
                 log.error("email", f'partial import of "{subject}" — '
-                                   f"{failed_groups} of {len(groups)} groups failed and "
+                                   f"{failed_groups} of {outcome['groups']} groups failed and "
                                    "will NOT be retried (rows already written)",
                           None, {"messageId": msg_id, "rows": len(msg_tx_ids)})
 

@@ -9,6 +9,14 @@ export function canProcess(source: TransactionSource): boolean {
   return source === "sms" || source === "manual" || source === "import" || source === "receipt";
 }
 
+// An email row cannot go through processTransaction: the row keeps only
+// "subject | from", never the body, so a re-run has to fetch the mail again —
+// and because one mail can hold several payments, it goes via a confirmation
+// rather than straight through.
+export function canRerunEmail(source: TransactionSource): boolean {
+  return source === "email";
+}
+
 // The one place a transaction is routed to its processor. Both callers — the
 // queued-row poller and the "Retry AI" button — come through here, because
 // when they routed independently the button did not route at all.
