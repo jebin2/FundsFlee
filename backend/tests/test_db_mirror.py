@@ -147,7 +147,7 @@ class TestTheFirstWriteAgainstAPopulatedSheet:
         sheet = {
             "meta!A2:B": [["region", "IN"]],
             "categories!A2:G": [["c1", "Food", "", "#f00", "cutlery", "true", "t"]],
-            "parsed_emails!A2:G": [["m1", "a@b.c", "Order", "t", "parsed", "", "1"]],
+            "parsed_emails!A2:H": [["m1", "a@b.c", "Order", "t", "parsed", "", "1"]],
         }
         monkeypatch.setattr(hydrate_mod, "get_sheets_client",
                             lambda token: FakeSheets(sheet))

@@ -84,6 +84,7 @@ async def parse_message(gmail, message: dict, region: str, today: str,
 
     parsed_rows: list[tuple[dict, str, str]] = []
     skip_reasons: list[str] = []
+    skip_details: list[str] = []
     failed_groups = 0
     for i, group in enumerate(groups, 1):
         if len(groups) > 1:
@@ -97,10 +98,14 @@ async def parse_message(gmail, message: dict, region: str, today: str,
             parsed_rows.append((tx, origin_subject, origin_from))
         if parsed["skipReason"]:
             skip_reasons.append(parsed["skipReason"])
+            detail = parsed.get("skipDetail")
+            skip_details.append(f"{parsed['skipReason']}: {detail}" if detail
+                                else parsed["skipReason"])
         if _group_hard_failed(parsed["skipReason"]):
             failed_groups += 1
 
     return {"parsed_rows": parsed_rows, "skip_reasons": skip_reasons,
+            "skip_details": skip_details,
             "failed_groups": failed_groups, "groups": len(groups)}
 
 

@@ -199,7 +199,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                 from_ = message["from"]
                 subject = message["subject"]
                 received_time = message["received_time"]
-            except Exception:
+            except Exception as err:
                 try:
                     await record_parsed_email(session.access_token, session.sheet_id, {
                         "emailId": msg_id, "from": from_, "subject": subject,
@@ -207,6 +207,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                         "status": "failed" if _attempts_of(states, msg_id) < MAX_ATTEMPTS
                                   else EXHAUSTED_STATUS,
                         "txIds": [], "attempts": _attempts_of(states, msg_id),
+                        "reason": f"fetch_error: {type(err).__name__}: {err}",
                     })
                 except Exception:
                     pass
@@ -250,6 +251,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                                   else EXHAUSTED_STATUS if exhausted
                                   else "skipped",
                         "txIds": [], "attempts": attempts,
+                        "reason": " | ".join(outcome.get("skip_details") or skip_reasons),
                     })
                 except Exception:
                     pass
@@ -287,6 +289,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                     "emailId": msg_id, "from": from_, "subject": subject,
                     "parsedAt": now, "status": "partial" if partial else "parsed",
                     "txIds": msg_tx_ids, "attempts": _attempts_of(states, msg_id),
+                    "reason": " | ".join(outcome.get("skip_details") or []) if partial else "",
                 })
             except Exception:
                 pass

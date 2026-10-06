@@ -108,11 +108,11 @@ class TestFillingAnEmptyMirror:
 
         assert set(fake.ranges_read) == {
             TX_RANGE, "categories!A2:G", "analysis_cache!A2:G",
-            "item_suggestions!A2:G", "meta!A2:B", "parsed_emails!A2:G"}
+            "item_suggestions!A2:G", "meta!A2:B", "parsed_emails!A2:H"}
 
     def test_a_reserved_word_column_survives(self, sheets_dir, monkeypatch):
         _wire(monkeypatch, FakeSheets(
-            {"parsed_emails!A2:G": [["m1", "noreply@zomato.com", "Order",
+            {"parsed_emails!A2:H": [["m1", "noreply@zomato.com", "Order",
                                      "2026-07-30", "parsed", "", "1"]]}))
         mod.hydrate_sync("tok", "sheet_abc")
 

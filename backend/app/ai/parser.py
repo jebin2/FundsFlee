@@ -135,36 +135,52 @@ def _clean_items(raw) -> list[dict]:
     return out
 
 
-def validate_transaction(raw: dict, today_date: str, min_confidence: float = CONFIDENCE_FLOOR) -> dict | None:
-    """The gauntlet every row passes, whatever entry point produced it."""
+def rejection_cause(raw: dict, today_date: str,
+                    min_confidence: float = CONFIDENCE_FLOOR) -> str | None:
+    """Why validate_transaction would drop this row, or None if it passes.
+
+    Split out so a dropped row can say which check it failed — the bare None
+    left failed_permanent emails with no trace of why.
+    """
     amount = _num(raw.get("amount"))
     if amount is None or amount != amount or amount <= 0 or amount > MAX_AMOUNT:
-        return None
+        return f"bad amount {raw.get('amount')!r}"
 
     # A model that omits confidence has not expressed doubt — treating that as 0
     # would silently discard real payments over a missing field.
     confidence = _num(raw.get("confidence"), 1.0)
     if confidence < min_confidence:
-        return None
+        return f"confidence {confidence} < {min_confidence}"
 
     merchant = raw.get("merchant")
     merchant = merchant.strip() if isinstance(merchant, str) else ""
     if not merchant or merchant.lower() == "unknown":
-        return None
+        return "no merchant"
 
     date_str = raw.get("date") if isinstance(raw.get("date"), str) else ""
     try:
         tx_date = date.fromisoformat(date_str)
         today = date.fromisoformat(today_date)
     except ValueError:
-        return None
+        return f"bad date {raw.get('date')!r}"
     try:
         two_years_ago = today.replace(year=today.year - 2)
     except ValueError:  # Feb 29 → Mar 1, matching JS setFullYear
         two_years_ago = today.replace(year=today.year - 2, month=3, day=1)
     # One day of slack: the server clock may trail a user in a timezone ahead.
     if tx_date > today + timedelta(days=1) or tx_date < two_years_ago:
+        return f"date {date_str} out of range"
+    return None
+
+
+def validate_transaction(raw: dict, today_date: str, min_confidence: float = CONFIDENCE_FLOOR) -> dict | None:
+    """The gauntlet every row passes, whatever entry point produced it."""
+    if rejection_cause(raw, today_date, min_confidence):
         return None
+    amount = _num(raw.get("amount"))
+    confidence = _num(raw.get("confidence"), 1.0)
+    merchant = raw["merchant"].strip()
+    date_str = raw["date"]
 
     pm = raw.get("payment_method")
     cat = raw.get("category")
@@ -335,19 +351,24 @@ async def parse_units(
             parsed = try_parse_ai_json(raw)
             if not isinstance(parsed, dict):
                 log.warn("parse", "AI response was not a JSON object",
-                         {"rawChars": len(raw), "rawHead": raw[:160].replace("\n", " ")})
-                return {"transactions": [], "docType": "purchase", "skipReason": "ai_null"}
+                         {"rawChars": len(raw), "rawHead": raw[:160].replace("\n", " "),
+                          "rawTail": raw[-160:].replace("\n", " ")})
+                return {"transactions": [], "docType": "purchase", "skipReason": "ai_null",
+                        "skipDetail": f"not JSON ({len(raw)} chars): "
+                                      f"…{raw[-120:]}".replace("\n", " ")}
             if parsed.get("doc_type") == "statement":
                 doc_type = "statement"
             raw_rows = [r for r in (parsed.get("transactions") or []) if isinstance(r, dict)]
     except Exception as err:
         log.error("parse", "ai call failed", err, {"promptChars": len(prompt)})
-        return {"transactions": [], "docType": "purchase", "skipReason": "parse_error"}
+        return {"transactions": [], "docType": "purchase", "skipReason": "parse_error",
+                "skipDetail": f"{type(err).__name__}: {err}"}
 
     ai_ms = int((time.time() - t0) * 1000)
     if not raw_rows:
         log.info("parse", "AI reported no debit to record", {"docType": doc_type, "ms": ai_ms})
-        return {"transactions": [], "docType": doc_type, "skipReason": "ai_null"}
+        return {"transactions": [], "docType": doc_type, "skipReason": "ai_null",
+                "skipDetail": "AI found no debit"}
 
     valid, dropped = [], []
     for r in raw_rows:
@@ -355,12 +376,14 @@ async def parse_units(
         if tx:
             valid.append(tx)
         else:
-            dropped.append(f"{r.get('merchant', '?')}/{r.get('amount', '?')}")
+            cause = rejection_cause(r, today_date, min_confidence)
+            dropped.append(f"{r.get('merchant', '?')}/{r.get('amount', '?')} ({cause})")
     if dropped:
         log.warn("parse", "rows failed validation",
                  {"dropped": len(dropped), "kept": len(valid), "rejected": "; ".join(dropped[:8])})
     if not valid:
-        return {"transactions": [], "docType": doc_type, "skipReason": "validation_failed"}
+        return {"transactions": [], "docType": doc_type, "skipReason": "validation_failed",
+                "skipDetail": "; ".join(dropped[:4])}
 
     # A purchase is one payment; more than one row means the component invoices
     # were multiplied after all. The customer-facing total exceeds any component,

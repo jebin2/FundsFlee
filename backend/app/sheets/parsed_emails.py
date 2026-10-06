@@ -1,9 +1,10 @@
 """parsed_emails tab — port of src/lib/sheets/parsedEmails.ts.
 
-Columns: email_id | from | subject | parsed_at | status | tx_ids | attempts
+Columns: email_id | from | subject | parsed_at | status | tx_ids | attempts | reason
 status: "parsed" | "partial" | "skipped" | "failed" | "failed_permanent"
 tx_ids: comma-separated transaction IDs (empty for skipped/failed)
 attempts: how many times the import has tried this message
+reason: why it produced no rows (skip reason plus detail); empty when parsed
 """
 import asyncio
 from typing import TypedDict
@@ -13,7 +14,7 @@ from app.db.repo import ROW_FIELD
 from app.db.registry import PARSED_EMAILS_HEADERS
 
 COLS = {"email_id": 0, "from": 1, "subject": 2, "parsed_at": 3, "status": 4,
-        "tx_ids": 5, "attempts": 6}
+        "tx_ids": 5, "attempts": 6, "reason": 7}
 
 # Statuses the import will look at again on the next run. A failure means the
 # AI chain was unreachable or returned nothing usable — a transient condition —
@@ -120,6 +121,7 @@ async def record_parsed_email(access_token: str, sheet_id: str, record: dict) ->
             record["status"],
             ",".join(record["txIds"]),
             str(record.get("attempts", 1)),
+            (record.get("reason") or "")[:500],
         ]
         fields = dict(zip(PARSED_EMAILS_HEADERS, row))
 

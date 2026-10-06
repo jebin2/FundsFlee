@@ -42,7 +42,7 @@ class TestRanges:
         assert spec("meta").data_range.endswith("!A2:B")
 
     def test_a_single_row_range(self):
-        assert spec("parsed_emails").row_range(7) == "parsed_emails!A7:G7"
+        assert spec("parsed_emails").row_range(7) == "parsed_emails!A7:H7"
 
     def test_a_block_range(self):
         assert spec("categories").block_range(2, 500) == "categories!A2:G500"

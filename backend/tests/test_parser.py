@@ -317,6 +317,16 @@ class TestSkipPaths:
         _fake_text(monkeypatch, {"doc_type": "purchase", "transactions": [_row(0)]})
         assert _run([_email()])["skipReason"] == "validation_failed"
 
+    def test_skip_detail_says_which_check_failed(self, monkeypatch):
+        # Without it a failed_permanent email left no trace of why.
+        _fake_text(monkeypatch, {"doc_type": "purchase",
+                                 "transactions": [_row(23.6, "Anthropic", confidence=0.4)]})
+        assert "confidence 0.4" in _run([_email()])["skipDetail"]
+
+    def test_skip_detail_carries_the_provider_error(self, monkeypatch):
+        _fake_text(monkeypatch, RuntimeError("OpenCode task timed out after 420s"))
+        assert "timed out" in _run([_email()])["skipDetail"]
+
 
 class TestReceivedDate:
     """Without the email's own date the model dated every undated order today,
