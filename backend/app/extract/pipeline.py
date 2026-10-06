@@ -82,6 +82,13 @@ async def _walk(data: bytes, mime_type: str, source: str, depth: int,
     if mime == PDF_MIME:
         return _take(budget, [await _pdf_unit(data, source, group)], group)
     if mime in IMAGE_MIMES:
+        # HTML mailers ship their logos, icons and spacers as image parts. Each
+        # one became its own AI call — fifteen for one insurance statement —
+        # and a single failure among them failed the whole message.
+        if len(data) < _MIN_IMAGE_BYTES:
+            log.info("extract", "tiny image — skipped as decoration",
+                     {"source": _label(source), "bytes": len(data)})
+            return []
         log.info("extract", "image attachment",
                  {"source": _label(source), "mime": mime, "bytes": len(data), "depth": depth})
         return _take(budget, [{
@@ -97,6 +104,9 @@ async def _walk(data: bytes, mime_type: str, source: str, depth: int,
 
 
 _MAX_BYTES = 20 * 1024 * 1024
+# A receipt photo or screenshot is tens of KB at least; under this it is a
+# logo, an icon or a tracking pixel.
+_MIN_IMAGE_BYTES = 8 * 1024
 
 
 async def _pdf_unit(data: bytes, source: str, group: int) -> dict:

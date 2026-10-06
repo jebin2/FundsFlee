@@ -63,11 +63,18 @@ class TestFlattening:
         assert "SWIGGY" in units[1]["text"]
 
     def test_image_attachment_becomes_an_image_unit(self):
-        mail = _mail(attachments=[(b"\xff\xd8\xff jpg", "image", "jpeg", "receipt.jpg")])
+        photo = b"\xff\xd8\xff" + b"\0" * 20_000
+        mail = _mail(attachments=[(photo, "image", "jpeg", "receipt.jpg")])
         units = _run(mail.as_bytes(), "message/rfc822")
         assert _kinds(units) == ["email", "images"]
         assert units[1]["mime"] == "image/jpeg"
         assert len(units[1]["pages"]) == 1
+
+    def test_mailer_decoration_images_are_skipped(self):
+        # Logos and spacers: each was its own AI call, and one failure among
+        # them failed the whole message.
+        mail = _mail(attachments=[(b"\xff\xd8\xff logo", "image", "jpeg", "img04.jpg")])
+        assert _kinds(_run(mail.as_bytes(), "message/rfc822")) == ["email"]
 
     def test_bare_pdf_needs_no_email_wrapper(self):
         units = _run(_digital_pdf(), "application/pdf", "upload.pdf")

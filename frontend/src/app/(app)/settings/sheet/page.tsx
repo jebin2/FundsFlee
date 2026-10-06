@@ -25,6 +25,8 @@ export default function SheetSettingsPage() {
     if (!isOnline) return;
     setSyncing(true);
     try {
+      // Push queued local changes to the sheet, then reload what the app shows.
+      await fetch("/api/sheet/sync", { method: "POST" }).catch(() => {});
       await refresh();
       setLastSynced(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
     } finally {

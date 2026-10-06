@@ -142,7 +142,7 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
                   "daysBack": config["daysBack"],
                   "attachments": "on" if config["attachments"] else "off"})
 
-        gmail = get_gmail_client(session.access_token)
+        gmail = get_gmail_client(session.access_token, session.refresh_token)
         query = build_gmail_query(config["fromContains"], config["daysBack"],
                                   None if manual else config["lastRun"],
                                   config["subjectContains"])

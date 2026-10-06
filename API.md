@@ -174,6 +174,7 @@ Session model: the cookie holds a **lib session JWT** (user id + email only — 
 |---|---|---|---|
 | `POST /api/sheet/init` | session | — | `{ sheetId, sheetUrl, isNew: false }` (init actually happens at sign-in) |
 | `POST /api/reset` | session | — | `{ ok: true }` — wipes & re-initializes the sheet |
+| `POST /api/sheet/sync` | session | — | `{ pushed: { tab: rows }, pending }` — pushes queued local changes to the sheet now instead of waiting for the 60s syncer |
 
 ## Shortcut (iOS)
 

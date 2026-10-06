@@ -131,7 +131,7 @@ async def _rerun(session: SheetSession, record: dict, tx_id: str) -> dict:
     # would leave every row looking edited by hand — which is precisely the
     # signal the confirmation uses to warn about losing an edit. In-flight
     # state is reported by preview() from memory instead, and touches nothing.
-    gmail = get_gmail_client(session.access_token)
+    gmail = get_gmail_client(session.access_token, session.refresh_token)
     try:
         message = await fetch_message(gmail, msg_id)
     except Exception as err:

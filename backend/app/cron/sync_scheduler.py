@@ -29,6 +29,10 @@ from app.db.sync import push, sheets_with_pending
 # within a minute, and a burst of writes in that minute costs one push.
 PUSH_INTERVAL_SECONDS = 60
 
+# One push at a time across the timer and the "Sync Now" button: two passes
+# overlapping would claim the same queued rows and write them twice.
+_push_lock = asyncio.Lock()
+
 # sheet id -> user id, for sheets whose owner has been seen this process.
 _owners: dict[str, str] = {}
 
@@ -55,8 +59,19 @@ async def _access_token_for(sheet_id: str) -> str | None:
     return None
 
 
+async def push_now(access_token: str, sheet_id: str) -> dict:
+    """Push one sheet's queue immediately, for a user who asked for it."""
+    async with _push_lock:
+        return await push(access_token, sheet_id)
+
+
 async def push_pending() -> dict[str, dict]:
     """One pass over every sheet with queued changes."""
+    async with _push_lock:
+        return await _push_pending_unlocked()
+
+
+async def _push_pending_unlocked() -> dict[str, dict]:
     results: dict[str, dict] = {}
     for sheet_id in sheets_with_pending():
         token = await _access_token_for(sheet_id)

@@ -12,13 +12,25 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from app.config import settings
 from app.core.logger import log
 
 T = TypeVar("T")
 
 
-def _creds(access_token: str) -> Credentials:
-    return Credentials(token=access_token)
+def _creds(access_token: str, refresh_token: str | None = None) -> Credentials:
+    if not refresh_token:
+        return Credentials(token=access_token)
+    # Refreshable, so a client held past the token's hour keeps working. A
+    # bare token made every Gmail fetch after the first hour of a long import
+    # fail with RefreshError, and those emails ended up failed_permanent.
+    return Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+    )
 
 
 def get_sheets_client(access_token: str):
@@ -29,8 +41,9 @@ def get_drive_client(access_token: str):
     return build("drive", "v3", credentials=_creds(access_token), cache_discovery=False)
 
 
-def get_gmail_client(access_token: str):
-    return build("gmail", "v1", credentials=_creds(access_token), cache_discovery=False)
+def get_gmail_client(access_token: str, refresh_token: str | None = None):
+    return build("gmail", "v1", credentials=_creds(access_token, refresh_token),
+                 cache_discovery=False)
 
 
 # Retry wrapper for Sheets API calls — handles 429 (rate limit) and transient 5xx.

@@ -36,7 +36,7 @@ def wired(monkeypatch, seed):
     seed("sheet", "transactions", [tx_row("t1"), tx_row("t2")])
     seed("sheet", "parsed_emails", [email_row("m1", ["t1", "t2"])])
 
-    monkeypatch.setattr(mod, "get_gmail_client", lambda token: object())
+    monkeypatch.setattr(mod, "get_gmail_client", lambda *a: object())
     monkeypatch.setattr(mod, "read_email_import_config",
                         _async({"region": "IN", "attachments": False}))
     monkeypatch.setattr(mod, "fetch_message", _async({
