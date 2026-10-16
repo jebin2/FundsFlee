@@ -100,7 +100,7 @@ port_holder() {
 }
 
 # Wait (up to ~$1 seconds) for something to start answering on $2.
-# PM2 marks a process "online" the moment it spawns, but uvicorn takes a beat
+# systemd reports a unit "active" the moment it spawns, but uvicorn takes a beat
 # to bind its socket — so the route table's ss-based probe would otherwise
 # report a freshly-started app as "not running".
 wait_for_port() {
@@ -108,7 +108,7 @@ wait_for_port() {
   while [ "$waited" -lt "$timeout" ]; do
     port_holder "$port" >/dev/null && return 0
     # Stop early if the app has already died on us.
-    if [ -n "$appname" ] && [ -z "$(pm2 pid "$appname" 2>/dev/null || true)" ]; then
+    if [ -n "$appname" ] && [ "$(systemctl is-active "$appname.service" 2>/dev/null)" != active ]; then
       warn "$appname exited before binding port $port."
       return 1
     fi
@@ -119,33 +119,53 @@ wait_for_port() {
 
 # True when the port is ours already, or nobody's.
 port_is_ours_or_free() {
-  local port="$1" me="$2" holder mypid
+  local port="$1" me="$2" holder
   holder=$(port_holder "$port")
   [ -z "$holder" ] && return 0
-  mypid=$(pm2 pid "$me" 2>/dev/null || true)
-  [ -n "$mypid" ] && printf '%s' "$holder" | grep -q "pid=$mypid"
+  [ "$(unit_of "$holder")" = "$me.service" ]
 }
 
-# Refuse to take a port that belongs to something else. pm2 delete + pm2 start
+# Refuse to take a port that belongs to something else. Restarting the service
 # would otherwise "succeed" and leave this app crash-looping on EADDRINUSE.
 assert_port_available() {
-  local port="$1" me="$2" holder other
+  local port="$1" me="$2" holder
   port_is_ours_or_free "$port" "$me" && return 0
   holder=$(port_holder "$port")
-  other=$(pm2 jlist 2>/dev/null | python3 -c "
-import json, sys
-try: procs = json.load(sys.stdin)
-except Exception: procs = []
-print(' '.join(p['name'] for p in procs if p.get('name') != '$me'
-                and p.get('pm2_env', {}).get('status') == 'online'))
-" 2>/dev/null || true)
   error "Port $port is already in use by: $holder
   Starting '$me' here would crash-loop on EADDRINUSE, so this stops now.
-  Other PM2 apps online: ${other:-none}
+  Owning service: $(unit_of "$holder" || true)
   Free the port, or pick another:  PORT=<free-port> bash deploy.sh"
 }
 
 # Decide which port to run on. Sets PORT.
+# The systemd unit of the process in an ss "users:(...)" field, if any.
+unit_of() {
+  local pid
+  pid=$(printf '%s' "$1" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  [ -n "$pid" ] && ps -o unit= -p "$pid" 2>/dev/null
+}
+
+# Write /etc/systemd/system/$APP_NAME.service and (re)start it, so systemd runs
+# the app at boot and restarts it if it dies. Args: working dir, then the
+# command. Environment comes from the SERVICE_ENV array, plus this script's PATH.
+# Mode 600: SERVICE_ENV may carry credentials (e.g. a proxy URL).
+install_service() {
+  local workdir="$1" unit="/etc/systemd/system/$APP_NAME.service" var
+  shift
+  {
+    printf '[Unit]\nDescription=%s (%s)\nAfter=network-online.target\nWants=network-online.target\n\n' "$APP_NAME" "$DOMAIN"
+    printf '[Service]\nUser=%s\nGroup=%s\nWorkingDirectory=%s\n' "$(id -un)" "$(id -gn)" "$workdir"
+    for var in "PATH=$PATH" "${SERVICE_ENV[@]}"; do
+      var=${var//\\/\\\\}; var=${var//\"/\\\"}; var=${var//%/%%}
+      printf 'Environment="%s"\n' "$var"
+    done
+    printf 'ExecStart=%s\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=multi-user.target\n' "$*"
+  } | sudo install -m 600 /dev/stdin "$unit"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --quiet "$APP_NAME.service"
+  sudo systemctl restart "$APP_NAME.service"
+}
+
 resolve_port() {
   local preferred="$1" domain="$2" me="$3" config="$4"
   local routed="" taken=" " host rule_port candidate
@@ -194,10 +214,10 @@ print_routes() {
     warn "No cloudflared config found — cannot list the routes."
     return
   fi
-  PM2_JSON="$(pm2 jlist 2>/dev/null || echo '[]')" \
+  UNITS="$(ps -eo pid=,unit= 2>/dev/null || true)" \
   LISTENERS="$(ss -ltnp 2>/dev/null || true)" \
   python3 - "$config" "$domain" <<'PYEOF'
-import json, os, re, sys
+import os, re, sys
 
 config, current = sys.argv[1], sys.argv[2]
 GREEN, YELLOW, DIM, BOLD, NC = "\033[0;32m", "\033[1;33m", "\033[2m", "\033[1m", "\033[0m"
@@ -216,13 +236,12 @@ for line in os.environ.get("LISTENERS", "").splitlines():
     if addr:
         listening[addr.group(2)] = pid.group(1) if pid else ""
 
-# pid -> pm2 name
-try:
-    procs = json.loads(os.environ.get("PM2_JSON") or "[]")
-except Exception:
-    procs = []
-by_pid = {str(p.get("pid")): p.get("name", "") for p in procs if p.get("pid")}
-by_name = {p.get("name", ""): p.get("pm2_env", {}).get("status", "") for p in procs}
+# pid -> systemd service
+by_pid = {}
+for line in os.environ.get("UNITS", "").splitlines():
+    parts = line.split()
+    if len(parts) == 2 and parts[1].endswith(".service"):
+        by_pid[parts[0]] = parts[1][:-len(".service")]
 
 rows = []
 for host, port in rules:
@@ -230,9 +249,7 @@ for host, port in rules:
     if pid is None:
         state, app = "not running", "—"
     else:
-        app = by_pid.get(pid, "")
-        state = by_name.get(app, "online") if app else "online"
-        app = app or "(not pm2)"
+        state, app = "online", by_pid.get(pid) or "(not a service)"
     rows.append((host, port, state, app, host == current))
 
 if not rows:
@@ -240,14 +257,14 @@ if not rows:
     sys.exit()
 
 w_host = max(6, max(len(r[0]) for r in rows))
-w_app = max(3, max(len(r[3]) for r in rows))
+w_app = max(7, max(len(r[3]) for r in rows))
 w_state = max(6, max(len(r[2]) for r in rows))
 line = "  " + "─" * (w_host + w_app + w_state + 17)
 
 print()
 print(f"  {BOLD}Cloudflare Tunnel routes{NC}  {DIM}({config}){NC}")
 print(line)
-print(f"  {BOLD}{'DOMAIN'.ljust(w_host)}  {'PORT'.rjust(5)}  {'STATUS'.ljust(w_state + 2)}  {'PM2'.ljust(w_app)}{NC}")
+print(f"  {BOLD}{'DOMAIN'.ljust(w_host)}  {'PORT'.rjust(5)}  {'STATUS'.ljust(w_state + 2)}  {'SERVICE'.ljust(w_app)}{NC}")
 print(line)
 for host, port, state, app, is_me in rows:
     dot = f"{GREEN}●{NC}" if state == "online" else f"{YELLOW}○{NC}"
@@ -294,13 +311,11 @@ if [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
 fi
 info "Node.js $(node -v)"
 
-# ── 2. PM2 ────────────────────────────────────────────────────────────────────
-step "PM2"
-if ! command -v pm2 &>/dev/null; then
-  warn "PM2 not found — installing..."
-  npm install -g pm2 2>/dev/null || sudo npm install -g pm2
-fi
-info "PM2 $(pm2 --version)"
+# ── 2. systemd ────────────────────────────────────────────────────────────────────────
+step "systemd"
+command -v systemctl >/dev/null 2>&1 || error "systemd not found — the app runs as a systemd service."
+sudo -n true 2>/dev/null || warn "sudo will ask for your password (to install the service)"
+info "$(systemctl --version | head -1)"
 
 # ── 3. Python backend environment (pyenv-virtualenv) ─────────────────────────
 step "Python env ($PYENV_ENV)"
@@ -381,30 +396,19 @@ rm -rf "$FRONTEND_DIR/dist"
 npm run build
 info "SPA built → frontend/dist"
 
-# ── 7. Start / restart the backend with PM2 (single worker) ──────────────────
-step "PM2 process"
+# ── 7. Start / restart the backend service (single worker) ──────────────────
+step "Service"
 # IMPORTANT: ONE worker — in-process scheduler + in-memory shortcut-prepare store.
-pm2 delete "$APP_NAME" 2>/dev/null || true
 info "Starting '$APP_NAME' (uvicorn) on 127.0.0.1:$PORT..."
-pm2 start "$PYTHON" \
-  --name "$APP_NAME" \
-  --cwd "$BACKEND_DIR" \
-  --interpreter none \
-  --time \
-  -- -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --workers 1 --no-access-log
-pm2 save
+SERVICE_ENV=()
+install_service "$BACKEND_DIR" \
+  "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --workers 1 --no-access-log
 
 if ! wait_for_port 30 "$PORT" "$APP_NAME"; then
   error "'$APP_NAME' did not bind port $PORT within 30s.
-  Check its logs:  pm2 logs $APP_NAME"
+  Check its logs:  journalctl -u $APP_NAME -n 50"
 fi
 info "'$APP_NAME' up — answering on 127.0.0.1:$PORT"
-
-STARTUP_CMD=$(pm2 startup 2>&1 | grep "sudo" || true)
-if [ -n "$STARTUP_CMD" ]; then
-  eval "$STARTUP_CMD" && info "PM2 registered for auto-start on reboot" \
-    || warn "Could not register PM2 startup — run manually: $STARTUP_CMD"
-fi
 
 # ── 8. Cloudflare Tunnel (route unchanged — still → localhost:$PORT) ──────────
 step "Cloudflare Tunnel"
@@ -458,9 +462,10 @@ echo "  Single origin: FastAPI serves the API + the built SPA on 127.0.0.1:$PORT
 echo "  Tunnel:  https://$DOMAIN"
 echo ""
 echo "  Useful commands:"
-echo "    pm2 logs $APP_NAME        — live backend logs"
-echo "    pm2 restart $APP_NAME     — restart"
-echo "    pm2 status                — process status"
+echo "    journalctl -u $APP_NAME -f          — live backend logs"
+echo "    sudo systemctl restart $APP_NAME    — restart"
+echo "    systemctl status $APP_NAME          — process status"
+echo "    (or Cockpit → Services → $APP_NAME)"
 echo ""
 echo "  To update: git pull && bash deploy.sh"
 echo ""
