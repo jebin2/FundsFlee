@@ -3,11 +3,11 @@
 
     python scripts/verify_mirror.py
 
-Reads only — it never writes to either store. Run it after using the app for a
-while: if every tab matches, dual-write is working and reads can move to the
-mirror.
+Reads only — it never writes to either store. A drift audit: the sheet is a
+one-way mirror of the local database, so a difference means a hand-edit, a
+push that has not gone out yet, or a bug in app/db/sync.
 
-Exits non-zero when anything differs, so it can gate the next phase.
+Exits non-zero when anything differs.
 """
 import asyncio
 import sys
@@ -47,8 +47,8 @@ async def main() -> int:
             print(f"       row {entry['row']}: {entry['problem']}{detail}")
 
     print()
-    print("MATCH — the mirror reproduces the sheet." if result["ok"]
-          else "MISMATCH — do not move reads over yet.")
+    print("MATCH — the sheet reproduces the local database." if result["ok"]
+          else "MISMATCH — the sheet has drifted (or a push is still pending).")
     return 0 if result["ok"] else 1
 
 

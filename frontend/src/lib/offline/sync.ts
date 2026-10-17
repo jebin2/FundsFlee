@@ -5,7 +5,6 @@ import type { Transaction } from "@/types";
 export interface SyncPage {
   transactions: Transaction[];
   total: number;
-  hasMore: boolean;
 }
 
 // Read from IndexedDB — instant, works offline
@@ -17,24 +16,17 @@ export async function getLocalTransactions(): Promise<Transaction[]> {
 // Prevents stale responses from overwriting fresh data on rapid refresh.
 let pullController: AbortController | null = null;
 
-// Fetch one page from the API and persist to IndexedDB.
-// Uses bulkPut only (no delete) — pages accumulate across loads.
+// Fetch the whole history from the API and persist to IndexedDB. The server
+// reads it from its local database, so there is no paging.
+// Uses bulkPut only (no delete) so unsynced optimistic creates survive.
 // Soft-deleted transactions are filtered server-side so they won't re-appear.
-export async function pullTransactions(page = 1, pageSize?: number): Promise<SyncPage> {
-  // Only cancel in-flight page-1 fetches (load-more pages are independent)
-  if (page === 1) {
-    pullController?.abort();
-    pullController = new AbortController();
-  }
-  const signal = page === 1 ? pullController!.signal : undefined;
-
-  const url = pageSize
-    ? `/api/transactions?page=${page}&pageSize=${pageSize}`
-    : `/api/transactions?page=${page}`;
+export async function pullTransactions(): Promise<SyncPage> {
+  pullController?.abort();
+  pullController = new AbortController();
 
   let res: Response;
   try {
-    res = await fetch(url, signal ? { signal } : undefined);
+    res = await fetch("/api/transactions", { signal: pullController.signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error("aborted");
@@ -44,12 +36,12 @@ export async function pullTransactions(page = 1, pageSize?: number): Promise<Syn
   if (res.status === 401) throw new Error("auth_expired");
   if (!res.ok) throw new Error("fetch_failed");
 
-  const { transactions, total, hasMore } = await res.json() as SyncPage;
+  const { transactions, total } = await res.json() as SyncPage;
 
   if (transactions.length > 0) {
     await offlineDb.transactions.bulkPut(transactions);
-  } else if (page === 1) {
-    // Page 1 returned empty — server has no transactions.
+  } else {
+    // Server has no transactions.
     // Only clear local if there are no pending offline ops (unsynced creates).
     const queued = await pendingCount();
     if (queued === 0) {
@@ -57,7 +49,7 @@ export async function pullTransactions(page = 1, pageSize?: number): Promise<Syn
     }
   }
 
-  return { transactions, total, hasMore };
+  return { transactions, total };
 }
 
 // Persist a single transaction locally (used after optimistic write)

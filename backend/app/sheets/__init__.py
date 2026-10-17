@@ -31,7 +31,6 @@ from app.sheets.suggestions import (
     supersede_note_suggestions,
 )
 from app.sheets.transactions import (
-    PAGE_SIZE,
     append_transaction,
     append_transactions,
     get_all_transactions,
@@ -41,7 +40,6 @@ from app.sheets.transactions import (
 )
 
 __all__ = [
-    "PAGE_SIZE",
     "append_category",
     "append_item_suggestions",
     "append_transaction",

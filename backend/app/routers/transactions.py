@@ -7,11 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.dates import now_iso
 from app.core.deps import SheetSession, require_session
-from app.core.numbers import js_parse_int
 from app.jobs.enrich_transaction_job import prepare_receipt_retry, run_enrich_transaction_job
 from app.services.item_normalization_service import request_note_refresh
 from app.sheets import (
-    PAGE_SIZE,
     append_transaction,
     get_all_transactions,
     get_transaction_by_id,
@@ -25,11 +23,10 @@ VALID_TYPES = ("image/jpeg", "image/png", "image/webp")
 
 
 @router.get("/api/transactions")
-async def list_transactions(request: Request, session: SheetSession = Depends(require_session)) -> dict:
-    qp = request.query_params
-    page = max(1, js_parse_int(qp.get("page", "1")))
-    page_size = min(500, max(1, js_parse_int(qp.get("pageSize", str(PAGE_SIZE)))))
-    return await get_transactions(session.access_token, session.sheet_id, page, page_size)
+async def list_transactions(session: SheetSession = Depends(require_session)) -> dict:
+    # page/pageSize are accepted and ignored: the whole history comes back with
+    # hasMore false, so a client still paging stops after its first request.
+    return await get_transactions(session.access_token, session.sheet_id)
 
 
 @router.post("/api/transactions")

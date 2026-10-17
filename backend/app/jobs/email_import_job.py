@@ -1,6 +1,5 @@
 """Email import job — port of src/server/jobs/emailImportJob.ts."""
 import asyncio
-import time
 
 from app.core.dates import today_iso, now_iso
 from app.core.deps import SheetSession
@@ -27,11 +26,6 @@ from app.sheets.parsed_emails import (
 )
 from app.sheets.client import get_gmail_client
 
-
-# The lock only has to look fresher than the five-minute staleness check, so
-# refreshing it per message spent two Sheets requests each — enough on a long
-# forwarded batch to exhaust the 60-reads-per-minute quota by itself.
-LOCK_REFRESH_SECONDS = 60
 
 # Gmail's per-page maximum. Listing is cheap (5 quota units a page); the cost of
 # a run is the per-message get, and those are gated by processed_ids.
@@ -132,7 +126,6 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
         return {"scanned": 0, "imported": 0, "skipped": 0, "failed": 0}
 
     await _set_meta_safe(session, "email_import_running_at", now_iso())
-    last_lock_refresh = time.monotonic()
 
     try:
         tag = "manual" if manual else "auto"
@@ -184,11 +177,10 @@ async def run_email_import_job(session: SheetSession, manual: bool = False) -> d
             result["scanned"] += 1
 
             # Keep the lock looking alive on a long run, so the daily cron does
-            # not treat it as stale and import everything a second time — but at
-            # most once a minute, not once per message.
-            if time.monotonic() - last_lock_refresh >= LOCK_REFRESH_SECONDS:
-                await _set_meta_safe(session, "email_import_running_at", now_iso())
-                last_lock_refresh = time.monotonic()
+            # not treat it as stale and import everything a second time. Per
+            # message, now that a meta write is local: it used to be throttled to
+            # once a minute because each refresh cost two Sheets requests.
+            await _set_meta_safe(session, "email_import_running_at", now_iso())
 
             from_ = ""
             subject = ""

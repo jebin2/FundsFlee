@@ -30,7 +30,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 function TransactionsContent() {
   const searchParams = useSearchParams();
   const isOnline = useOnlineStatus();
-  const { transactions, total, hasMore, syncing, loadingMore, refresh, loadMore } = useTransactions();
+  const { transactions, total, refresh } = useTransactions();
   const updateTransaction = useTransactionsStore((s) => s.updateTransaction);
   const [loading, setLoading] = useState(transactions.length === 0);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
@@ -90,7 +90,7 @@ function TransactionsContent() {
         <h1 className="hidden md:block font-bold" style={{ fontSize: 24, color: "var(--color-on-background)" }}>Transactions</h1>
         {total > 0 && (
           <span style={{ fontSize: 13, color: "var(--color-on-surface-variant)" }}>
-            {transactions.length} of {total}
+            {total} transaction{total !== 1 ? "s" : ""}
           </span>
         )}
       </div>
@@ -154,34 +154,6 @@ function TransactionsContent() {
                 }}
               />
             </ErrorBoundary>
-
-            {/* Load more */}
-            {hasMore && !search && !filterCat && !datePreset && !showDupsOnly && (
-              <button
-                onClick={loadMore}
-                disabled={loadingMore || syncing}
-                className="w-full py-3.5 rounded-2xl font-medium flex items-center justify-center gap-2 mt-4"
-                style={{
-                  background: "var(--color-surface-container)",
-                  color: "var(--color-on-surface-variant)",
-                  fontSize: 14,
-                  opacity: loadingMore || syncing ? 0.6 : 1,
-                }}
-              >
-                {loadingMore ? (
-                  <>
-                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
-                      style={{ borderColor: "var(--color-outline)", borderTopColor: "var(--color-on-surface-variant)" }} />
-                    Loading…
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>expand_more</span>
-                    Load older transactions ({total - transactions.length} more)
-                  </>
-                )}
-              </button>
-            )}
           </>
         )}
       </div>

@@ -31,42 +31,37 @@ def tx_row(tx_id: str, deleted: bool = False) -> list:
 
 
 class TestGetTransactions:
-    def test_pagination_returns_the_last_rows_first(self, no_api, seed):
-        # 5 physical rows, page_size 2 -> page 1 is rows 5..6, the newest.
-        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 6)])
+    def test_returns_the_whole_history_in_sheet_order(self, no_api, seed):
+        # More rows than the old 200-row page, to pin that nothing is cut off.
+        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 251)])
 
-        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 2))
-        assert [t["id"] for t in page["transactions"]] == ["t4", "t5"]
-        assert page["total"] == 5
-        assert page["hasMore"] is True
-
-    def test_last_page_clamps_to_row_2_and_has_more_false(self, no_api, seed):
-        seed("sheet", "transactions", [tx_row(f"t{i}") for i in range(1, 4)])
-
-        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 2, 2))
-        assert [t["id"] for t in page["transactions"]] == ["t1"]
+        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet"))
+        assert [t["id"] for t in page["transactions"]] == [f"t{i}" for i in range(1, 251)]
+        assert page["total"] == 250
         assert page["hasMore"] is False
 
     def test_deleted_rows_excluded_from_results_and_total(self, no_api, seed):
         seed("sheet", "transactions", [tx_row("t1"), tx_row("t2", deleted=True)])
 
-        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 200))
+        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet"))
         assert [t["id"] for t in page["transactions"]] == ["t1"]
         assert page["total"] == 1  # visible count, not physical
-
-    def test_a_deleted_row_still_occupies_its_page_slot(self, no_api, seed):
-        # Page boundaries are physical rows, so a soft-deleted row is filtered
-        # after slicing, not before. Otherwise pages would silently overlap.
-        seed("sheet", "transactions",
-             [tx_row("t1"), tx_row("t2", deleted=True), tx_row("t3")])
-
-        page = asyncio.run(transactions_mod.get_transactions("tok", "sheet", 1, 2))
-        assert [t["id"] for t in page["transactions"]] == ["t3"]
-        assert page["hasMore"] is True
 
     def test_empty_sheet(self, no_api):
         page = asyncio.run(transactions_mod.get_transactions("tok", "sheet"))
         assert page == {"transactions": [], "total": 0, "hasMore": False}
+
+
+class TestGetTransactionById:
+    def test_found(self, no_api, seed):
+        seed("sheet", "transactions", [tx_row("t1"), tx_row("t2")])
+        tx = asyncio.run(transactions_mod.get_transaction_by_id("tok", "sheet", "t2"))
+        assert tx["id"] == "t2"
+
+    def test_deleted_and_missing_are_none(self, no_api, seed):
+        seed("sheet", "transactions", [tx_row("t1", deleted=True)])
+        assert asyncio.run(transactions_mod.get_transaction_by_id("tok", "sheet", "t1")) is None
+        assert asyncio.run(transactions_mod.get_transaction_by_id("tok", "sheet", "nope")) is None
 
 
 class TestWritesLandLocally:

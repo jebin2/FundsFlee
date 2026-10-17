@@ -452,10 +452,16 @@ reversed:
 Also gone: `transaction_update_to_cells` / `fields_to_cells` / `letter`, which
 existed to address individual sheet cells.
 
-**Phase 4 — remove the scaffolding.** Dual-write is already gone with 3b. What
-remains: fold the five per-tab modules into `Repo`, drop the quota-driven
-batching contortions in the import job, and retire `verify_mirror.py` from its
-role as a phase gate. Every tab stays in the sheet; nothing is dropped.
+**Phase 4 — remove the scaffolding.** *(done)* Dual-write was already gone
+with 3b. The per-tab modules were already thin adapters over `mirror`/`Repo` by
+then — what is left in them is the domain shaping this plan allows (row typing,
+upsert rules, dedup), so they stay. Removed: the 200-row page
+(`GET /api/transactions` returns the whole history, `hasMore` always false),
+`loadAll`/`loadMore`/`MAX_ALL_PAGES`/`ALL_PAGE_SIZE` and the "partial" state on
+the client, the import job's once-a-minute lock-refresh throttle, and the
+scan in `get_transaction_by_id` (now an indexed lookup). `verify_mirror.py`
+stays as a drift audit, no longer a phase gate. Every tab stays in the sheet;
+nothing is dropped.
 
 ## What this deletes
 

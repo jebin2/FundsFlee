@@ -1,8 +1,8 @@
 """Diff the mirror against the sheet.
 
-This is what makes dual-write provable rather than hopeful. Run the app
-normally, then run this: if every tab matches cell for cell, reads can move to
-the mirror in Phase 3 on evidence.
+Started as the gate for moving reads to SQLite; now it is the drift audit.
+The sheet is written only by app/db/sync, so any difference is a hand-edit, a
+push still waiting in the outbox, or a sync bug.
 
 It compares by POSITION, not by key. Two stores holding the same rows in a
 different order is not a match — position is row identity here, so a shift is

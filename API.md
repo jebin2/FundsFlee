@@ -78,7 +78,7 @@ Session model: the cookie holds a **lib session JWT** (user id + email only — 
 
 | Method & path | Auth | Request | Response |
 |---|---|---|---|
-| `GET /api/transactions?page&pageSize` | session | `page` ≥1 default 1; `pageSize` 1–500 default `PAGE_SIZE` | `{ transactions: Transaction[], total: number, hasMore: boolean }` |
+| `GET /api/transactions` | session | — (`page`/`pageSize` from older clients are accepted and ignored) | `{ transactions: Transaction[], total: number, hasMore: false }` — the whole non-deleted history in sheet order; `hasMore` is always `false` |
 | `POST /api/transactions` | session | `{ transaction: Transaction }` — server fills `id` (uuid4) if empty, `created_at` if empty, always sets `updated_at=now` | `{ transaction: Transaction }` (the completed object) |
 | `PUT /api/transactions/{id}` | session | `{ updates: Partial<Transaction> }` | `{ ok: true }` |
 | `PATCH /api/transactions/{id}` | session | `Partial<Transaction>` (bare, no wrapper) | `{ ok: true, updates: <echo> }` |

@@ -34,7 +34,7 @@ function periodSuffix(period: Period): string {
 export default function DashboardPage() {
   const { data: session } = useSession();
   const router = useRouter();
-  const { transactions, refresh, syncing, hasMore, loadingMore, loadAll } = useTransactions();
+  const { transactions, refresh, syncing } = useTransactions();
   // Show skeleton only when store is empty; if we already have data (from
   // local cache or a previous session) render it immediately and refresh quietly.
   const [loading, setLoading] = useState(transactions.length === 0);
@@ -73,19 +73,6 @@ export default function DashboardPage() {
       setAmountLoading(false);
     }
   }, []);
-
-  // Every other period fits comfortably in the first page; "All time" does not,
-  // and a partial store would total the most recent rows under an all-time
-  // label. Pull the rest before the number means anything.
-  useEffect(() => {
-    if (period === "all" && hasMore) void loadAll();
-  }, [period, hasMore, loadAll]);
-
-  // Two distinct states, because loadAll can fail (a dropped connection, or a
-  // concurrent refresh aborting its first page). Gating the amount on "not
-  // finished" alone left it showing a placeholder forever when that happened.
-  const loadingAll = period === "all" && loadingMore;
-  const partialHistory = period === "all" && hasMore && !loadingMore;
 
   const { from, to } = getPeriodRange(period);
   const filtered = transactions.filter(
@@ -135,12 +122,11 @@ export default function DashboardPage() {
       <div className="rounded-3xl p-6" style={{ background: "var(--color-primary)", boxShadow: "0 8px 24px rgba(31,16,142,0.25)" }}>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>Total Spent</p>
         <p style={{ fontSize: 40, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} className="mt-1">
-          {amountLoading || loadingAll ? "…" : formatINR(totalSpent)}
+          {amountLoading ? "…" : formatINR(totalSpent)}
         </p>
         <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }} className="mt-2">
           {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
           {periodSuffix(period)}
-          {partialHistory && " · partial, retry by reselecting"}
         </p>
 
         {/* Mini category bars */}
