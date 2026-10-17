@@ -13,17 +13,20 @@ A personal AI spending tracker that logs transactions automatically from receipt
 
 ## Tech stack
 
-- **Next.js 16** — full-stack React framework
-- **Google Sheets** — the database; every user's data lives in their own sheet in their Google Drive
+- **FastAPI** (`backend/`) — the API, background jobs and scheduler; also serves the built SPA
+- **React + Vite** (`frontend/`) — the PWA, with Workbox for offline support
+- **SQLite + Google Sheets** — a local SQLite file per user is the database; their own Google Sheet is a one-way mirror of it, synced every minute
 - **Google OAuth** — sign-in and access to Sheets, Drive, and Gmail
-- **Claude AI** — receipt parsing, SMS parsing, PDF extraction, duplicate detection, spending analysis
-- **Serwist** — service worker for PWA and offline support
+- **AI** (Claude, Gemini, OpenCode) — receipt parsing, SMS parsing, PDF extraction, duplicate detection, spending analysis
 
 ## Self-hosting
 
 1. Clone the repo
-2. Copy `.env.local.example` → `.env.local` and fill in your keys (Google OAuth, Claude API)
-3. Run `bash deploy.sh` on your VPS — sets up PM2, builds, and configures Cloudflare Tunnel
+2. Copy `.env.local.example` → `.env.local` and fill in your keys (Google OAuth, AI provider)
+3. Run `bash deploy.sh` on your VPS — installs a systemd service, builds the SPA, and configures Cloudflare Tunnel. See [`DEPLOY.md`](./DEPLOY.md).
+
+The REST contract is in [`API.md`](./API.md); the storage design in
+[`SQLITE_MIGRATION.md`](./SQLITE_MIGRATION.md).
 
 ## Feature docs
 
